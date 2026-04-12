@@ -61,7 +61,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const [playerName, setPlayerName] = useState('');
   const partySocketRef = useRef<PartySocket | null>(null);
   // Prevent re-broadcasting state that arrived from remote
-  const isSyncingFromRemote = useRef(false);
+  const lastSyncedStateRef = useRef<string | null>(null);
   // Ref to avoid stale closure in broadcast effect
   const isPartyHostRef = useRef(isPartyHost);
   isPartyHostRef.current = isPartyHost;
@@ -71,8 +71,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
 
   // ── Broadcast state to party whenever it changes (host only) ───────────────
   useEffect(() => {
-    if (isSyncingFromRemote.current) {
-      isSyncingFromRemote.current = false;
+    const serialized = JSON.stringify(state);
+    if (lastSyncedStateRef.current === serialized) {
       return;
     }
     if (!isPartyHostRef.current) return;
@@ -275,7 +275,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
       if (data.type === 'sync') {
         setPartyPlayers(data.players ?? []);
         if (data.gameState) {
-          isSyncingFromRemote.current = true;
+          lastSyncedStateRef.current = JSON.stringify(data.gameState);
           setState(data.gameState);
         }
         // Determine if we're host based on first player slot
@@ -295,7 +295,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
         if (me) setIsPartyHost(me.isHost);
 
       } else if (data.type === 'game_sync' && data.gameState) {
-        isSyncingFromRemote.current = true;
+        lastSyncedStateRef.current = JSON.stringify(data.gameState);
         setState(data.gameState);
       }
     });
