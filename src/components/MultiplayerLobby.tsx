@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useGame } from '@/hooks/use-game';
 import { Scroll, Users, Copy, Check, Crown, Loader2, LogIn, Swords } from 'lucide-react';
 
@@ -19,6 +19,7 @@ export function MultiplayerLobby({ onProceed }: MultiplayerLobbyProps) {
   const [copied, setCopied] = useState(false);
   const [isJoining, setIsJoining] = useState(false);
   const codeInputRef = useRef<HTMLInputElement>(null);
+  const joinTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ── Handlers ──────────────────────────────────────────────────────────────
 
@@ -36,6 +37,16 @@ export function MultiplayerLobby({ onProceed }: MultiplayerLobbyProps) {
     setIsJoining(true);
     joinParty(code, joinName.trim());
     setView('waiting');
+
+    // Timeout fallback: if not connected after 5s, revert to join view with error
+    if (joinTimeoutRef.current) clearTimeout(joinTimeoutRef.current);
+    joinTimeoutRef.current = setTimeout(() => {
+      if (!isPartyConnected) {
+        setIsJoining(false);
+        setView('joining');
+        setJoinError('Could not connect to party. Please check the code and try again.');
+      }
+    }, 5000);
   }
 
   function handleCopyCode() {
@@ -50,6 +61,26 @@ export function MultiplayerLobby({ onProceed }: MultiplayerLobbyProps) {
     setJoinCode(val);
     setJoinError('');
   }
+
+  // ── Clear isJoining when connection succeeds (Task 5) ────────────────────────
+  useEffect(() => {
+    if (isPartyConnected && isJoining) {
+      setIsJoining(false);
+      if (joinTimeoutRef.current) {
+        clearTimeout(joinTimeoutRef.current);
+        joinTimeoutRef.current = null;
+      }
+    }
+  }, [isPartyConnected, isJoining]);
+
+  // ── Cleanup timeout on unmount ───────────────────────────────────────────────
+  useEffect(() => {
+    return () => {
+      if (joinTimeoutRef.current) {
+        clearTimeout(joinTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // ── Waiting screen (non-host joined, game not started yet) ─────────────────
   if (view === 'waiting' && !isPartyHost) {
