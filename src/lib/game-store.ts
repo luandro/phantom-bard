@@ -34,7 +34,7 @@ export function clearGameState(): void {
 
 export function createCharacter(partial: Partial<Character> & { name: string; race: string; class: string; subclass: string; level: number }): Character {
   const conMod = Math.floor(((partial.stats?.CON ?? 10) - 10) / 2);
-  const baseHp = partial.class === 'Barbarian' ? 12 : partial.class === 'Fighter' || partial.class === 'Paladin' || partial.class === 'Ranger' ? 10 : partial.class === 'Wizard' || partial.class === 'Sorcerer' ? 6 : 8;
+  const baseHp = partial.class === 'Barbarian' ? 12 : ['Fighter', 'Paladin', 'Ranger', 'Blood Hunter'].includes(partial.class) ? 10 : ['Wizard', 'Sorcerer'].includes(partial.class) ? 6 : partial.class === 'Artificer' ? 8 : 8;
   const hp = baseHp + conMod + (partial.level - 1) * (Math.floor(baseHp / 2) + 1 + conMod);
   const spells = getSpellsForCharacter(partial.class, partial.subclass, partial.level);
 
@@ -50,6 +50,8 @@ export function createCharacter(partial: Partial<Character> & { name: string; ra
     stats: partial.stats ?? { STR: 10, DEX: 10, CON: 10, INT: 10, WIS: 10, CHA: 10 },
     inventory: partial.inventory ?? ['Backpack', 'Bedroll', 'Rations (5 days)', 'Waterskin', '50 ft rope'],
     spells,
+    lineage: partial.lineage,
+    groupPatron: partial.groupPatron,
   };
 }
 
