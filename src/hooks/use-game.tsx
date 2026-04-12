@@ -5,7 +5,7 @@ import { createDefaultGameState, loadGameState, saveGameState, clearGameState, c
 interface GameContextType {
   state: GameState;
   isLoading: boolean;
-  startCampaign: (name: string, level: number, party: Character[]) => void;
+  startCampaign: (name: string, level: number, party: Character[], patron?: GroupPatron) => void;
   addStoryEntry: (entry: StoryEntry) => void;
   updateCharacter: (id: string, updates: Partial<Character>) => void;
   performDiceRoll: (sides: number, modifier?: number) => DiceRoll;
