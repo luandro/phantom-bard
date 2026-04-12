@@ -85,7 +85,7 @@ export function StoryLog() {
     return () => stopAudio();
   }, [stopAudio]);
 
-  const iconMap: Record<string, JSX.Element> = {
+  const iconMap: Record<string, React.ReactNode> = {
     narration: <BookOpen className="w-4 h-4 text-gold" />,
     player: <User className="w-4 h-4 text-success" />,
     dice: <Dice6 className="w-4 h-4 text-magic" />,
