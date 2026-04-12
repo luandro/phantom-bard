@@ -1,16 +1,89 @@
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useState, useCallback } from 'react';
 import { useGame } from '@/hooks/use-game';
 import { motion } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
-import { BookOpen, User, Dice6, Info } from 'lucide-react';
+import { BookOpen, User, Dice6, Info, Volume2, VolumeX, Loader2 } from 'lucide-react';
+
+declare global {
+  interface Window {
+    puter: {
+      ai: {
+        txt2speech: (text: string, options?: Record<string, unknown>) => Promise<HTMLAudioElement>;
+      };
+    };
+  }
+}
 
 export function StoryLog() {
   const { state, isLoading } = useGame();
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [playingId, setPlayingId] = useState<string | null>(null);
+  const [loadingId, setLoadingId] = useState<string | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
   }, [state.storyLog.length, isLoading]);
+
+  const stopAudio = useCallback(() => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+      audioRef.current = null;
+    }
+    setPlayingId(null);
+  }, []);
+
+  const playNarration = useCallback(async (entryId: string, text: string) => {
+    // If already playing this entry, stop it
+    if (playingId === entryId) {
+      stopAudio();
+      return;
+    }
+
+    // Stop any current playback
+    stopAudio();
+
+    if (!window.puter) {
+      console.error('Puter.js not loaded yet');
+      return;
+    }
+
+    setLoadingId(entryId);
+    try {
+      // Strip markdown for cleaner speech
+      const cleanText = text
+        .replace(/[#*_~`>]/g, '')
+        .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+        .replace(/\n+/g, '. ')
+        .trim();
+
+      const audio = await window.puter.ai.txt2speech(cleanText, {
+        voice: 'Matthew',
+        engine: 'neural',
+        language: 'en-US',
+      });
+
+      audioRef.current = audio;
+      setPlayingId(entryId);
+      setLoadingId(null);
+
+      audio.addEventListener('ended', () => {
+        setPlayingId(null);
+        audioRef.current = null;
+      });
+
+      audio.play();
+    } catch (err) {
+      console.error('TTS error:', err);
+      setLoadingId(null);
+    }
+  }, [playingId, stopAudio]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => stopAudio();
+  }, [stopAudio]);
 
   const iconMap = {
     narration: <BookOpen className="w-4 h-4 text-gold" />,
@@ -40,6 +113,21 @@ export function StoryLog() {
             <span className="text-xs text-muted-foreground font-display">
               {entry.type === 'narration' ? 'Dungeon Master' : entry.type === 'player' ? entry.characterName ?? 'Player' : entry.type === 'dice' ? 'Dice Roll' : 'System'}
             </span>
+            {entry.type === 'narration' && (
+              <button
+                onClick={() => playNarration(entry.id, entry.content)}
+                className="ml-auto p-1 rounded hover:bg-accent/20 transition-colors"
+                title={playingId === entry.id ? 'Stop narration' : 'Listen to narration'}
+              >
+                {loadingId === entry.id ? (
+                  <Loader2 className="w-3.5 h-3.5 text-gold animate-spin" />
+                ) : playingId === entry.id ? (
+                  <VolumeX className="w-3.5 h-3.5 text-gold" />
+                ) : (
+                  <Volume2 className="w-3.5 h-3.5 text-muted-foreground hover:text-gold transition-colors" />
+                )}
+              </button>
+            )}
           </div>
           {entry.type === 'narration' ? (
             <div className="prose prose-sm prose-invert max-w-none text-foreground/90 leading-relaxed">
