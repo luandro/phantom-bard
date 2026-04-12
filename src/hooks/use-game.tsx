@@ -1,6 +1,19 @@
-import { useState, useCallback, useEffect, createContext, useContext, type ReactNode } from 'react';
-import { type GameState, type Character, type StoryEntry, type DiceRoll, PREBUILT_CAMPAIGNS, type Campaign, type GroupPatron } from '@/lib/types';
+import { useState, useCallback, useEffect, useRef, createContext, useContext, type ReactNode } from 'react';
+import PartySocket from 'partysocket';
+import { type GameState, type Character, type StoryEntry, type DiceRoll, type PartyPlayer, PREBUILT_CAMPAIGNS, type Campaign, type GroupPatron } from '@/lib/types';
 import { createDefaultGameState, loadGameState, saveGameState, clearGameState, createStoryEntry, rollDice, createCharacter } from '@/lib/game-store';
+
+// ─── Party code generator ───────────────────────────────────────────────────
+
+function generatePartyCode(): string {
+  // Unambiguous alphanumeric chars (no 0/O/I/1/L)
+  const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  let code = '';
+  for (let i = 0; i < 5; i++) code += chars[Math.floor(Math.random() * chars.length)];
+  return code;
+}
+
+// ─── Context types ───────────────────────────────────────────────────────────
 
 interface GameContextType {
   state: GameState;
@@ -12,6 +25,15 @@ interface GameContextType {
   sendPlayerAction: (action: string) => Promise<void>;
   resetGame: () => void;
   matchedCampaign: Campaign | null;
+  // Multiplayer / party
+  partyCode: string | null;
+  partyPlayers: PartyPlayer[];
+  isPartyHost: boolean;
+  isPartyConnected: boolean;
+  playerName: string;
+  createParty: (name: string) => string;
+  joinParty: (code: string, name: string) => void;
+  leaveParty: () => void;
 }
 
 const GameContext = createContext<GameContextType | null>(null);
@@ -22,12 +44,39 @@ export function useGame() {
   return ctx;
 }
 
+// ─── Provider ────────────────────────────────────────────────────────────────
+
 export function GameProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<GameState>(() => loadGameState() ?? createDefaultGameState());
   const [isLoading, setIsLoading] = useState(false);
   const [matchedCampaign, setMatchedCampaign] = useState<Campaign | null>(null);
 
+  // Party state
+  const [partyCode, setPartyCode] = useState<string | null>(null);
+  const [partyPlayers, setPartyPlayers] = useState<PartyPlayer[]>([]);
+  const [isPartyHost, setIsPartyHost] = useState(false);
+  const [isPartyConnected, setIsPartyConnected] = useState(false);
+  const [playerName, setPlayerName] = useState('');
+  const partySocketRef = useRef<PartySocket | null>(null);
+  // Prevent re-broadcasting state that arrived from remote
+  const isSyncingFromRemote = useRef(false);
+
+  // ── Persist to localStorage ────────────────────────────────────────────────
   useEffect(() => { saveGameState(state); }, [state]);
+
+  // ── Broadcast state to party whenever it changes ───────────────────────────
+  useEffect(() => {
+    if (isSyncingFromRemote.current) {
+      isSyncingFromRemote.current = false;
+      return;
+    }
+    if (partySocketRef.current && isPartyConnected && partyCode) {
+      partySocketRef.current.send(JSON.stringify({ type: 'game_update', gameState: state }));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state]);
+
+  // ── Game actions ───────────────────────────────────────────────────────────
 
   const addStoryEntry = useCallback((entry: StoryEntry) => {
     setState(prev => ({ ...prev, storyLog: [...prev.storyLog, entry] }));
@@ -51,9 +100,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
     const matched = PREBUILT_CAMPAIGNS.find(c => c.name.toLowerCase() === name.toLowerCase());
     setMatchedCampaign(matched ?? null);
 
-    const opening = matched
-      ? matched.opening
-      : `Your adventure "${name}" begins...`;
+    const opening = matched ? matched.opening : `Your adventure "${name}" begins...`;
 
     setState({
       campaignName: name,
@@ -66,10 +113,10 @@ export function GameProvider({ children }: { children: ReactNode }) {
       groupPatron: patron,
     });
 
-    // Trigger AI for initial scene
     setTimeout(() => {
       sendInitialScene(name, level, party, matched ?? null, patron);
     }, 500);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const sendInitialScene = async (name: string, level: number, party: Character[], campaign: Campaign | null, patron?: GroupPatron) => {
@@ -124,7 +171,6 @@ export function GameProvider({ children }: { children: ReactNode }) {
         { role: 'user', content: `Recent events:\n${recentLog}\n\nPlayer action: ${activeChar?.name ?? 'Player'} says: "${action}"\n\nRespond as the DM. Keep to 2-3 paragraphs.` }
       ]);
 
-      // Parse response for game effects
       const hpChanges = response.matchAll(/\[HP:([^:]+):([+-]\d+)\]/g);
       for (const match of hpChanges) {
         const charName = match[1];
@@ -156,12 +202,110 @@ export function GameProvider({ children }: { children: ReactNode }) {
     setMatchedCampaign(null);
   }, []);
 
+  // ── Party / multiplayer ────────────────────────────────────────────────────
+
+  const connectToRoom = useCallback((code: string, name: string) => {
+    partySocketRef.current?.close();
+
+    const host = import.meta.env.VITE_PARTYKIT_HOST ?? '127.0.0.1:1999';
+    const socket = new PartySocket({ host, room: code.toLowerCase() });
+
+    socket.addEventListener('open', () => {
+      setIsPartyConnected(true);
+      socket.send(JSON.stringify({ type: 'hello', playerName: name }));
+    });
+
+    socket.addEventListener('message', (event: MessageEvent<string>) => {
+      const data = JSON.parse(event.data) as {
+        type: string;
+        players?: PartyPlayer[];
+        player?: PartyPlayer;
+        hostId?: string | null;
+        gameState?: GameState;
+        playerId?: string;
+      };
+
+      if (data.type === 'sync') {
+        setPartyPlayers(data.players ?? []);
+        if (data.gameState) {
+          isSyncingFromRemote.current = true;
+          setState(data.gameState);
+        }
+        // Determine if we're host based on first player slot
+        const me = data.players?.find(p => p.id === socket.id);
+        if (me) setIsPartyHost(me.isHost);
+
+      } else if (data.type === 'player_joined') {
+        setPartyPlayers(data.players ?? []);
+        if (data.player?.id === socket.id) {
+          setIsPartyHost(data.player.isHost);
+        }
+
+      } else if (data.type === 'player_left') {
+        setPartyPlayers(data.players ?? []);
+        // Re-check if we became host after someone left
+        const me = data.players?.find(p => p.id === socket.id);
+        if (me) setIsPartyHost(me.isHost);
+
+      } else if (data.type === 'game_sync' && data.gameState) {
+        isSyncingFromRemote.current = true;
+        setState(data.gameState);
+      }
+    });
+
+    socket.addEventListener('close', () => {
+      setIsPartyConnected(false);
+    });
+
+    partySocketRef.current = socket;
+  }, []);
+
+  const createParty = useCallback((name: string): string => {
+    const code = generatePartyCode();
+    setPartyCode(code);
+    setPlayerName(name);
+    setIsPartyHost(true);
+    connectToRoom(code, name);
+    return code;
+  }, [connectToRoom]);
+
+  const joinParty = useCallback((code: string, name: string): void => {
+    const upperCode = code.toUpperCase();
+    setPartyCode(upperCode);
+    setPlayerName(name);
+    setIsPartyHost(false);
+    connectToRoom(upperCode, name);
+  }, [connectToRoom]);
+
+  const leaveParty = useCallback(() => {
+    partySocketRef.current?.close();
+    partySocketRef.current = null;
+    setPartyCode(null);
+    setIsPartyConnected(false);
+    setIsPartyHost(false);
+    setPartyPlayers([]);
+    setPlayerName('');
+  }, []);
+
+  // Cleanup socket on unmount
+  useEffect(() => {
+    return () => { partySocketRef.current?.close(); };
+  }, []);
+
   return (
-    <GameContext.Provider value={{ state, isLoading, startCampaign, addStoryEntry, updateCharacter, performDiceRoll, sendPlayerAction, resetGame, matchedCampaign }}>
+    <GameContext.Provider value={{
+      state, isLoading,
+      startCampaign, addStoryEntry, updateCharacter, performDiceRoll, sendPlayerAction, resetGame,
+      matchedCampaign,
+      partyCode, partyPlayers, isPartyHost, isPartyConnected, playerName,
+      createParty, joinParty, leaveParty,
+    }}>
       {children}
     </GameContext.Provider>
   );
 }
+
+// ─── AI helper ───────────────────────────────────────────────────────────────
 
 async function callAIDM(messages: { role: string; content: string }[]): Promise<string> {
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
@@ -182,6 +326,9 @@ async function callAIDM(messages: { role: string; content: string }[]): Promise<
     throw new Error(`AI error: ${resp.status}`);
   }
 
-  const data = await resp.json();
+  const data = await resp.json() as { content: string };
   return data.content;
 }
+
+// Keep createCharacter export for consumers that import it via use-game
+export { createCharacter };
