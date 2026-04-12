@@ -85,18 +85,20 @@ export function StoryLog() {
     return () => stopAudio();
   }, [stopAudio]);
 
-  const iconMap = {
+  const iconMap: Record<string, JSX.Element> = {
     narration: <BookOpen className="w-4 h-4 text-gold" />,
     player: <User className="w-4 h-4 text-success" />,
     dice: <Dice6 className="w-4 h-4 text-magic" />,
     system: <Info className="w-4 h-4 text-muted-foreground" />,
+    puzzle: <Dice6 className="w-4 h-4 text-gold" />,
   };
 
-  const colorMap = {
+  const colorMap: Record<string, string> = {
     narration: 'border-l-gold/40',
     player: 'border-l-success/40',
     dice: 'border-l-magic/40',
     system: 'border-l-muted-foreground/40',
+    puzzle: 'border-l-gold/40',
   };
 
   return (
