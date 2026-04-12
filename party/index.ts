@@ -10,6 +10,7 @@ interface RoomState {
   players: PartyPlayer[];
   gameState: unknown;
   hostId: string | null;
+  stateVersion: number;
 }
 
 export default class GameRoom implements Party.Server {
@@ -20,6 +21,7 @@ export default class GameRoom implements Party.Server {
       players: [],
       gameState: null,
       hostId: null,
+      stateVersion: 0,
     };
 
     conn.send(
@@ -28,17 +30,19 @@ export default class GameRoom implements Party.Server {
         players: state.players,
         gameState: state.gameState,
         hostId: state.hostId,
+        version: state.stateVersion,
       })
     );
   }
 
   async onMessage(message: string, sender: Party.Connection) {
-    let data: { type: string; playerName?: string; gameState?: unknown };
+    let data: { type: string; playerName?: string; gameState?: unknown; version?: number };
     try {
       data = JSON.parse(message) as {
         type: string;
         playerName?: string;
         gameState?: unknown;
+        version?: number;
       };
     } catch {
       sender.send(JSON.stringify({ type: "error", message: "Invalid JSON" }));
@@ -54,6 +58,7 @@ export default class GameRoom implements Party.Server {
       players: [],
       gameState: null,
       hostId: null,
+      stateVersion: 0,
     };
 
     if (data.type === "hello" && data.playerName) {
@@ -93,7 +98,20 @@ export default class GameRoom implements Party.Server {
         return;
       }
 
+      // Task 16: Reject stale versions
+      const incomingVersion = typeof data.version === "number" ? data.version : 0;
+      if (incomingVersion <= state.stateVersion) {
+        sender.send(
+          JSON.stringify({
+            type: "error",
+            message: "Stale version: rejected",
+          })
+        );
+        return;
+      }
+
       state.gameState = data.gameState;
+      state.stateVersion = incomingVersion;
       await this.room.storage.put("state", state);
 
       // Broadcast to all except sender
@@ -101,6 +119,7 @@ export default class GameRoom implements Party.Server {
         JSON.stringify({
           type: "game_sync",
           gameState: data.gameState,
+          version: state.stateVersion,
         }),
         [sender.id]
       );
@@ -112,6 +131,7 @@ export default class GameRoom implements Party.Server {
       players: [],
       gameState: null,
       hostId: null,
+      stateVersion: 0,
     };
 
     state.players = state.players.filter((p) => p.id !== conn.id);
@@ -134,6 +154,17 @@ export default class GameRoom implements Party.Server {
         playerId: conn.id,
         players: state.players,
         hostId: state.hostId,
+      })
+    );
+  }
+
+  // Task 14: Server error handler
+  onError(conn: Party.Connection, error: Error) {
+    console.error(`Party connection error (${conn.id}):`, error);
+    conn.send(
+      JSON.stringify({
+        type: "error",
+        message: "An internal server error occurred",
       })
     );
   }
