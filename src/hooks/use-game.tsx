@@ -47,7 +47,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
     return roll;
   }, [addStoryEntry]);
 
-  const startCampaign = useCallback((name: string, level: number, party: Character[]) => {
+  const startCampaign = useCallback((name: string, level: number, party: Character[], patron?: GroupPatron) => {
     const matched = PREBUILT_CAMPAIGNS.find(c => c.name.toLowerCase() === name.toLowerCase());
     setMatchedCampaign(matched ?? null);
 
@@ -63,11 +63,12 @@ export function GameProvider({ children }: { children: ReactNode }) {
       currentTurn: 0,
       isInCombat: false,
       gameStarted: true,
+      groupPatron: patron,
     });
 
     // Trigger AI for initial scene
     setTimeout(() => {
-      sendInitialScene(name, level, party, matched ?? null);
+      sendInitialScene(name, level, party, matched ?? null, patron);
     }, 500);
   }, []);
 
