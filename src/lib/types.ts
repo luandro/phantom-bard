@@ -162,6 +162,12 @@ export interface SubclassAbility {
   description: string;
 }
 
+export interface PartyPlayer {
+  id: string;
+  name: string;
+  isHost: boolean;
+}
+
 // ─── Custom Lineage System ───
 
 export const CUSTOM_LINEAGE_FEATS = [
