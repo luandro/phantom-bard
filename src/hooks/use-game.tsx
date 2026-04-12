@@ -5,6 +5,11 @@ import { createDefaultGameState, loadGameState, saveGameState, clearGameState, c
 
 // ─── Party code generator ───────────────────────────────────────────────────
 
+/**
+ * Generates a random 5-character party code using unambiguous
+ * alphanumeric characters (excludes 0/O/I/1/L to avoid confusion).
+ * @returns A uppercase alphanumeric party code string
+ */
 function generatePartyCode(): string {
   // Unambiguous alphanumeric chars (no 0/O/I/1/L)
   const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
@@ -15,6 +20,13 @@ function generatePartyCode(): string {
 
 // ─── Type guard for incoming game state (Task 12) ──────────────────────────
 
+/**
+ * Type guard that validates whether an unknown value conforms to the {@link GameState} interface.
+ * Checks for required fields: campaignName, campaignLevel, party, storyLog, currentTurn,
+ * isInCombat, and gameStarted.
+ * @param data - The value to validate
+ * @returns True if the data is a valid GameState
+ */
 function isValidGameState(data: unknown): data is GameState {
   if (typeof data !== 'object' || data === null) return false;
   const d = data as Record<string, unknown>;
@@ -54,6 +66,12 @@ interface GameContextType {
 
 const GameContext = createContext<GameContextType | null>(null);
 
+/**
+ * React context hook for accessing the game state and actions.
+ * Must be called within a {@link GameProvider}.
+ * @returns The game context with state, actions, and multiplayer utilities
+ * @throws If called outside of a GameProvider
+ */
 export function useGame() {
   const ctx = useContext(GameContext);
   if (!ctx) throw new Error('useGame must be used within GameProvider');
@@ -62,6 +80,12 @@ export function useGame() {
 
 // ─── Provider ────────────────────────────────────────────────────────────────
 
+/**
+ * Provides global game state, AI DM interaction, and multiplayer party management
+ * to all descendant components via React context.
+ * Handles localStorage persistence, party WebSocket connections, and
+ * debounced state broadcasting (host-only).
+ */
 export function GameProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<GameState>(() => loadGameState() ?? createDefaultGameState());
   const [isLoading, setIsLoading] = useState(false);
@@ -255,7 +279,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
 
   // ── Party / multiplayer ────────────────────────────────────────────────────
 
-  const connectToRoom = useCallback((code: string, name: string) => {
+  const connectToRoom = useCallback((code: string, name: string, intent: 'create' | 'join') => {
     partySocketRef.current?.close();
 
     const host = import.meta.env.VITE_PARTYKIT_HOST ?? '127.0.0.1:1999';
@@ -263,7 +287,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
 
     socket.addEventListener('open', () => {
       setIsPartyConnected(true);
-      socket.send(JSON.stringify({ type: 'hello', playerName: name }));
+      socket.send(JSON.stringify({ type: 'hello', playerName: name, intent }));
     });
 
     socket.addEventListener('message', (event: MessageEvent<string>) => {
@@ -365,7 +389,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
     setPartyCode(code);
     setPlayerName(name);
     setIsPartyHost(true);
-    connectToRoom(code, name);
+    connectToRoom(code, name, 'create');
     return code;
   }, [connectToRoom]);
 
@@ -374,7 +398,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
     setPartyCode(upperCode);
     setPlayerName(name);
     setIsPartyHost(false);
-    connectToRoom(upperCode, name);
+    connectToRoom(upperCode, name, 'join');
   }, [connectToRoom]);
 
   const leaveParty = useCallback(() => {

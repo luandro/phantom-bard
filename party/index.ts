@@ -1,10 +1,5 @@
 import type * as Party from "partykit/server";
-
-interface PartyPlayer {
-  id: string;
-  name: string;
-  isHost: boolean;
-}
+import type { PartyPlayer } from "../src/lib/party-types";
 
 interface RoomState {
   players: PartyPlayer[];
@@ -13,9 +8,17 @@ interface RoomState {
   stateVersion: number;
 }
 
+/**
+ * PartyKit server room managing multiplayer game state.
+ * Handles player connections, host assignment with intent validation,
+ * game state synchronization with versioning, and host migration on disconnect.
+ */
 export default class GameRoom implements Party.Server {
   constructor(readonly room: Party.Room) {}
 
+  /**
+   * Sends the current room state (players, game state, version) to a newly connected client.
+   */
   async onConnect(conn: Party.Connection) {
     const state = (await this.room.storage.get<RoomState>("state")) ?? {
       players: [],
@@ -35,12 +38,19 @@ export default class GameRoom implements Party.Server {
     );
   }
 
+  /**
+   * Handles incoming messages from connected clients.
+   * Supports:
+   * - `hello`: Registers a player with intent validation (`create` or `join`).
+   * - `game_update`: Updates game state (host-only, with stale version rejection).
+   */
   async onMessage(message: string, sender: Party.Connection) {
-    let data: { type: string; playerName?: string; gameState?: unknown; version?: number };
+    let data: { type: string; playerName?: string; intent?: 'create' | 'join'; gameState?: unknown; version?: number };
     try {
       data = JSON.parse(message) as {
         type: string;
         playerName?: string;
+        intent?: 'create' | 'join';
         gameState?: unknown;
         version?: number;
       };
@@ -62,7 +72,25 @@ export default class GameRoom implements Party.Server {
     };
 
     if (data.type === "hello" && data.playerName) {
-      const isHost = state.players.length === 0 || state.hostId === sender.id;
+      const intent = data.intent ?? 'join';
+
+      // Validate intent against room state
+      if (intent === 'create' && state.players.length > 0 && state.hostId !== sender.id) {
+        sender.send(JSON.stringify({
+          type: "error",
+          message: "Room already exists. Use join instead.",
+        }));
+        return;
+      }
+      if (intent === 'join' && state.players.length === 0) {
+        sender.send(JSON.stringify({
+          type: "error",
+          message: "Room does not exist yet. The host must create it first.",
+        }));
+        return;
+      }
+
+      const isHost = intent === 'create' || state.hostId === sender.id;
       const player: PartyPlayer = {
         id: sender.id,
         name: data.playerName,
@@ -126,6 +154,10 @@ export default class GameRoom implements Party.Server {
     }
   }
 
+  /**
+   * Handles player disconnection. Removes the player from the room and
+   * promotes the next player to host if the current host leaves.
+   */
   async onClose(conn: Party.Connection) {
     const state = (await this.room.storage.get<RoomState>("state")) ?? {
       players: [],
@@ -158,7 +190,9 @@ export default class GameRoom implements Party.Server {
     );
   }
 
-  // Task 14: Server error handler
+  /**
+   * Logs connection errors and attempts to notify the affected client.
+   */
   onError(conn: Party.Connection, error: Error) {
     console.error(`Party connection error (${conn.id}):`, error);
     try {

@@ -89,11 +89,7 @@ export interface SubclassAbility {
   description: string;
 }
 
-export interface PartyPlayer {
-  id: string;
-  name: string;
-  isHost: boolean;
-}
+export type { PartyPlayer } from './party-types';
 
 // ─── Custom Lineage System ───
 
