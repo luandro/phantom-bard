@@ -13,6 +13,22 @@ function generatePartyCode(): string {
   return code;
 }
 
+// ─── Type guard for incoming game state (Task 12) ──────────────────────────
+
+function isValidGameState(data: unknown): data is GameState {
+  if (typeof data !== 'object' || data === null) return false;
+  const d = data as Record<string, unknown>;
+  return (
+    typeof d.campaignName === 'string' &&
+    typeof d.campaignLevel === 'number' &&
+    Array.isArray(d.party) &&
+    Array.isArray(d.storyLog) &&
+    typeof d.currentTurn === 'number' &&
+    typeof d.isInCombat === 'boolean' &&
+    typeof d.gameStarted === 'boolean'
+  );
+}
+
 // ─── Context types ───────────────────────────────────────────────────────────
 
 interface GameContextType {
@@ -63,20 +79,51 @@ export function GameProvider({ children }: { children: ReactNode }) {
   // Ref to avoid stale closure in broadcast effect
   const isPartyHostRef = useRef(isPartyHost);
   isPartyHostRef.current = isPartyHost;
+  // Task 15: Refs for isPartyConnected and partyCode to avoid stale closures
+  const isPartyConnectedRef = useRef(isPartyConnected);
+  isPartyConnectedRef.current = isPartyConnected;
+  const partyCodeRef = useRef(partyCode);
+  partyCodeRef.current = partyCode;
+  // Task 16: Monotonically increasing version for state updates
+  const stateVersionRef = useRef(0);
+  // Task 11: Debounce timeout ref for broadcast
+  const broadcastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ── Persist to localStorage ────────────────────────────────────────────────
   useEffect(() => { saveGameState(state); }, [state]);
 
   // ── Broadcast state to party whenever it changes (host only) ───────────────
+  // Task 11: 300ms debounce, Task 15: refs for stable values, Task 16: version
   useEffect(() => {
     const serialized = JSON.stringify(state);
     if (lastSyncedStateRef.current === serialized) {
       return;
     }
     if (!isPartyHostRef.current) return;
-    if (partySocketRef.current && isPartyConnected && partyCode) {
-      partySocketRef.current.send(JSON.stringify({ type: 'game_update', gameState: state }));
+
+    // Task 11: Clear previous timeout and set new one for debounce
+    if (broadcastTimeoutRef.current !== null) {
+      clearTimeout(broadcastTimeoutRef.current);
     }
+
+    broadcastTimeoutRef.current = setTimeout(() => {
+      if (partySocketRef.current && isPartyConnectedRef.current && partyCodeRef.current) {
+        stateVersionRef.current += 1;
+        partySocketRef.current.send(JSON.stringify({
+          type: 'game_update',
+          gameState: state,
+          version: stateVersionRef.current,
+        }));
+      }
+      broadcastTimeoutRef.current = null;
+    }, 300);
+
+    return () => {
+      if (broadcastTimeoutRef.current !== null) {
+        clearTimeout(broadcastTimeoutRef.current);
+        broadcastTimeoutRef.current = null;
+      }
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state]);
 
@@ -227,6 +274,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
         hostId?: string | null;
         gameState?: GameState;
         playerId?: string;
+        version?: number;
+        message?: string;
       };
       try {
         data = JSON.parse(event.data) as {
@@ -236,6 +285,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
           hostId?: string | null;
           gameState?: GameState;
           playerId?: string;
+          version?: number;
+          message?: string;
         };
       } catch {
         console.warn('Received invalid JSON from party server');
@@ -247,11 +298,23 @@ export function GameProvider({ children }: { children: ReactNode }) {
         return;
       }
 
+      if (data.type === 'error') {
+        console.warn('Server error:', data.message);
+        return;
+      }
+
       if (data.type === 'sync') {
         setPartyPlayers(data.players ?? []);
-        if (data.gameState) {
+        // Task 12: Validate game state before applying
+        if (data.gameState && isValidGameState(data.gameState)) {
           lastSyncedStateRef.current = JSON.stringify(data.gameState);
           setState(data.gameState);
+          // Task 16: Sync version from server
+          if (typeof data.version === 'number') {
+            stateVersionRef.current = data.version;
+          }
+        } else if (data.gameState) {
+          console.warn('Received invalid game state from server, ignoring');
         }
         // Determine if we're host based on first player slot
         const me = data.players?.find(p => p.id === socket.id);
@@ -270,9 +333,24 @@ export function GameProvider({ children }: { children: ReactNode }) {
         if (me) setIsPartyHost(me.isHost);
 
       } else if (data.type === 'game_sync' && data.gameState) {
-        lastSyncedStateRef.current = JSON.stringify(data.gameState);
-        setState(data.gameState);
+        // Task 12: Validate game state before applying
+        if (isValidGameState(data.gameState)) {
+          lastSyncedStateRef.current = JSON.stringify(data.gameState);
+          setState(data.gameState);
+          // Task 16: Sync version from server
+          if (typeof data.version === 'number') {
+            stateVersionRef.current = data.version;
+          }
+        } else {
+          console.warn('Received invalid game state in game_sync, ignoring');
+        }
       }
+    });
+
+    // Task 13: Handle WebSocket errors
+    socket.addEventListener('error', (event: Event) => {
+      console.error('WebSocket error:', event);
+      setIsPartyConnected(false);
     });
 
     socket.addEventListener('close', () => {
