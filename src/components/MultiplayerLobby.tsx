@@ -28,7 +28,6 @@ export function MultiplayerLobby({ onProceed }: MultiplayerLobbyProps) {
   const [copied, setCopied] = useState(false);
   const [isJoining, setIsJoining] = useState(false);
   const [timeoutError, setTimeoutError] = useState(false);
-  const [isLeaving, setIsLeaving] = useState(false);
   const codeInputRef = useRef<HTMLInputElement>(null);
   const joinTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const secondaryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -111,10 +110,8 @@ export function MultiplayerLobby({ onProceed }: MultiplayerLobbyProps) {
   }, []);
 
   function handleLeaveParty() {
-    setIsLeaving(true);
     leaveParty();
     setView('select');
-    setIsLeaving(false);
     setTimeoutError(false);
     if (joinTimeoutRef.current) { clearTimeout(joinTimeoutRef.current); joinTimeoutRef.current = null; }
     if (secondaryTimeoutRef.current) { clearTimeout(secondaryTimeoutRef.current); secondaryTimeoutRef.current = null; }
@@ -122,6 +119,8 @@ export function MultiplayerLobby({ onProceed }: MultiplayerLobbyProps) {
 
   function handleRetryConnection() {
     setTimeoutError(false);
+    if (joinTimeoutRef.current) { clearTimeout(joinTimeoutRef.current); joinTimeoutRef.current = null; }
+    if (secondaryTimeoutRef.current) { clearTimeout(secondaryTimeoutRef.current); secondaryTimeoutRef.current = null; }
     leaveParty();
     setView('joining');
     setIsJoining(false);
@@ -168,7 +167,6 @@ export function MultiplayerLobby({ onProceed }: MultiplayerLobbyProps) {
 
           <button
             onClick={handleLeaveParty}
-            disabled={isLeaving}
             aria-label="Leave party and return to lobby"
             className="w-full flex items-center justify-center gap-2 py-2 rounded-xl text-muted-foreground hover:text-destructive border border-border hover:border-destructive/40 text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
@@ -280,7 +278,7 @@ export function MultiplayerLobby({ onProceed }: MultiplayerLobbyProps) {
               Join Party
             </button>
             <button
-              onClick={() => { setView('select'); setJoinError(''); setJoinCode(''); setIsJoining(false); if (joinTimeoutRef.current) { clearTimeout(joinTimeoutRef.current); joinTimeoutRef.current = null; } }}
+              onClick={() => { setView('select'); setJoinError(''); setJoinCode(''); setIsJoining(false); if (joinTimeoutRef.current) { clearTimeout(joinTimeoutRef.current); joinTimeoutRef.current = null; } if (secondaryTimeoutRef.current) { clearTimeout(secondaryTimeoutRef.current); secondaryTimeoutRef.current = null; } }}
               className="w-full py-2 rounded-xl text-muted-foreground hover:text-foreground text-sm transition-colors"
             >
               ← Back

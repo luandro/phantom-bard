@@ -90,7 +90,12 @@ export default class GameRoom implements Party.Server {
         return;
       }
 
-      const isHost = intent === 'create' || state.hostId === sender.id;
+      // Recognize reconnecting host: either by connection ID match or by name match
+      // (connection ID changes on page refresh, so name is used as fallback)
+      const previousHost = state.hostId ? state.players.find(p => p.id === state.hostId) : null;
+      const isReconnectingHost = state.hostId === sender.id ||
+        (previousHost !== undefined && previousHost?.name === data.playerName);
+      const isHost = intent === 'create' || isReconnectingHost;
       const player: PartyPlayer = {
         id: sender.id,
         name: data.playerName,
