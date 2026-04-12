@@ -82,7 +82,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
       const patronCtx = patron ? ` The party is sponsored by "${patron.name}" (${patron.type}): ${patron.description}. Perks: ${patron.perks.join(', ')}.` : '';
 
       const response = await callAIDM([
-        { role: 'user', content: `Begin the campaign. ${campaignContext} Party: ${partyDesc}. Level: ${level}. Set the scene with vivid description, present the party with their first situation, and give them clear choices for what to do next. Keep it to 2-3 paragraphs.` }
+        { role: 'user', content: `Begin the campaign. ${campaignContext}${patronCtx} Party: ${partyDesc}. Level: ${level}. Set the scene with vivid description, present the party with their first situation, and give them clear choices for what to do next. Keep it to 2-3 paragraphs.` }
       ]);
 
       setState(prev => ({
