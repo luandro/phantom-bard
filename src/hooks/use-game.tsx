@@ -117,9 +117,10 @@ export function GameProvider({ children }: { children: ReactNode }) {
 
       const campaign = matchedCampaign;
       const campaignCtx = campaign ? `Campaign: "${campaign.name}". Tone: ${campaign.tone}.` : `Campaign: "${state.campaignName}".`;
+      const patronCtx = state.groupPatron ? ` Party patron: "${state.groupPatron.name}" (${state.groupPatron.type}).` : '';
 
       const response = await callAIDM([
-        { role: 'system', content: `You are a D&D Dungeon Master. ${campaignCtx} Party: ${partyDesc}. Rules: 1) Request dice rolls for uncertain outcomes using [ROLL:d20+modifier] format. 2) Adapt difficulty to party level ${state.campaignLevel}. 3) Be descriptive and immersive. 4) Present clear choices. 5) If combat starts, describe enemy positions. 6) Track HP changes with [HP:characterName:-amount] or [HP:characterName:+amount]. 7) Never resolve uncertain outcomes without dice.` },
+        { role: 'system', content: `You are a D&D Dungeon Master. ${campaignCtx}${patronCtx} Party: ${partyDesc}. Rules: 1) Request dice rolls for uncertain outcomes using [ROLL:d20+modifier] format. 2) Adapt difficulty to party level ${state.campaignLevel}. 3) Be descriptive and immersive. 4) Present clear choices. 5) If combat starts, describe enemy positions. 6) Track HP changes with [HP:characterName:-amount] or [HP:characterName:+amount]. 7) Never resolve uncertain outcomes without dice. 8) Occasionally introduce puzzles (riddles, logic challenges, ciphers) that players must solve. 9) Reference subclass abilities when characters use class features. 10) If the party has a patron, weave their influence into the story.` },
         { role: 'user', content: `Recent events:\n${recentLog}\n\nPlayer action: ${activeChar?.name ?? 'Player'} says: "${action}"\n\nRespond as the DM. Keep to 2-3 paragraphs.` }
       ]);
 
