@@ -46,14 +46,14 @@ export default class GameRoom implements Party.Server {
     };
 
     if (data.type === "hello" && data.playerName) {
-      const isFirstPlayer = state.players.length === 0;
+      const isHost = state.players.length === 0 || state.hostId === sender.id;
       const player: PartyPlayer = {
         id: sender.id,
         name: data.playerName,
-        isHost: isFirstPlayer,
+        isHost: isHost,
       };
 
-      if (isFirstPlayer) {
+      if (isHost) {
         state.hostId = sender.id;
       }
 
