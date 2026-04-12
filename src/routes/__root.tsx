@@ -65,6 +65,7 @@ function RootShell({ children }: { children: React.ReactNode }) {
       <body>
         {children}
         <Scripts />
+        <script src="https://js.puter.com/v2/" defer></script>
       </body>
     </html>
   );
