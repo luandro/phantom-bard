@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useRef } from "react";
 import { GameProvider, useGame } from "@/hooks/use-game";
 import { GameSetup } from "@/components/GameSetup";
 import { GameScreen } from "@/components/GameScreen";
@@ -27,7 +27,7 @@ function Index() {
 
 function GameRouter() {
   const { state, isPartyHost, partyCode, isPartyConnected } = useGame();
-  const [pastLobby, setPastLobby] = useState(false);
+  const pastLobby = useRef(false);
 
   // A non-host player who has joined a party will wait here until the host
   // starts the campaign (at which point state.gameStarted becomes true via sync).
@@ -35,8 +35,8 @@ function GameRouter() {
 
   if (state.gameStarted) return <GameScreen />;
 
-  if (!pastLobby || isNonHostWaiting) {
-    return <MultiplayerLobby onProceed={() => setPastLobby(true)} />;
+  if (!pastLobby.current || isNonHostWaiting || (partyCode && !isPartyHost && !state.gameStarted)) {
+    return <MultiplayerLobby onProceed={() => { pastLobby.current = true; }} />;
   }
 
   return <GameSetup />;
