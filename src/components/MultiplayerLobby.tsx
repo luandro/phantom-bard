@@ -210,7 +210,7 @@ export function MultiplayerLobby({ onProceed }: MultiplayerLobbyProps) {
               Join Party
             </button>
             <button
-              onClick={() => { setView('select'); setJoinError(''); setJoinCode(''); setIsJoining(false); }}
+              onClick={() => { setView('select'); setJoinError(''); setJoinCode(''); setIsJoining(false); if (joinTimeoutRef.current) { clearTimeout(joinTimeoutRef.current); joinTimeoutRef.current = null; } }}
               className="w-full py-2 rounded-xl text-muted-foreground hover:text-foreground text-sm transition-colors"
             >
               ← Back
