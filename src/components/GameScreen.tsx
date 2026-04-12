@@ -4,14 +4,29 @@ import { PartyPanel } from '@/components/PartyPanel';
 import { DiceRoller } from '@/components/DiceRoller';
 import { ActionBar } from '@/components/ActionBar';
 import { LootPanel } from '@/components/LootPanel';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Scroll, Users, Dice6, RotateCcw, Menu, X, Crown, Wifi, Gift } from 'lucide-react';
 
+/**
+ * Main game screen component that renders the story log, action bar,
+ * party panel, dice roller, and header with party info dropdown.
+ * Supports both solo and multiplayer modes with responsive layout.
+ */
 export function GameScreen() {
   const { state, resetGame, partyCode, partyPlayers, isPartyHost, isPartyConnected } = useGame();
   const [sidePanel, setSidePanel] = useState<'party' | 'dice' | 'loot' | null>(null);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [showPartyInfo, setShowPartyInfo] = useState(false);
+
+  // Close party info dropdown on Escape key
+  useEffect(() => {
+    if (!showPartyInfo) return;
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') setShowPartyInfo(false);
+    }
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [showPartyInfo]);
 
   const inParty = Boolean(partyCode);
 

@@ -17,6 +17,10 @@ export const Route = createFileRoute("/")({
   }),
 });
 
+/**
+ * Root page component. Wraps the game in a {@link GameProvider} and
+ * routes between the multiplayer lobby, game setup, and active game screen.
+ */
 function Index() {
   const [pastLobby, setPastLobby] = useState(false);
   return (
@@ -26,6 +30,12 @@ function Index() {
   );
 }
 
+/**
+ * Routing component that determines which screen to show based on game state:
+ * - If the game has started, shows {@link GameScreen}.
+ * - If the user hasn't passed the lobby or is a non-host in a party, shows {@link MultiplayerLobby}.
+ * - Otherwise, shows {@link GameSetup}.
+ */
 function GameRouter({ pastLobby, onProceed }: { pastLobby: boolean; onProceed: () => void }) {
   const { state, isPartyHost, partyCode } = useGame();
 

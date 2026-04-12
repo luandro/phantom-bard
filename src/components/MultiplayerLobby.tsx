@@ -1,15 +1,24 @@
 import { useState, useRef, useEffect } from 'react';
 import { useGame } from '@/hooks/use-game';
-import { Scroll, Users, Copy, Check, Crown, Loader2, LogIn, Swords } from 'lucide-react';
+import { Scroll, Users, Copy, Check, Crown, Loader2, LogIn, Swords, LogOut } from 'lucide-react';
 
 type View = 'select' | 'creating' | 'joining' | 'waiting';
 
+/**
+ * Props for the {@link MultiplayerLobby} component.
+ */
 interface MultiplayerLobbyProps {
+  /** Callback invoked when the user proceeds past the lobby (solo or as host). */
   onProceed: () => void;
 }
 
+/**
+ * Multiplayer lobby screen with flows for creating a party, joining an existing party,
+ * and waiting for the host to start the game. Includes connection timeouts and
+ * a leave-party option for non-host players.
+ */
 export function MultiplayerLobby({ onProceed }: MultiplayerLobbyProps) {
-  const { createParty, joinParty, isPartyConnected, partyPlayers, isPartyHost, partyCode } = useGame();
+  const { createParty, joinParty, leaveParty, isPartyConnected, partyPlayers, isPartyHost, partyCode } = useGame();
 
   const [view, setView] = useState<View>('select');
   const [hostName, setHostName] = useState('');
@@ -18,8 +27,11 @@ export function MultiplayerLobby({ onProceed }: MultiplayerLobbyProps) {
   const [joinError, setJoinError] = useState('');
   const [copied, setCopied] = useState(false);
   const [isJoining, setIsJoining] = useState(false);
+  const [timeoutError, setTimeoutError] = useState(false);
+  const [isLeaving, setIsLeaving] = useState(false);
   const codeInputRef = useRef<HTMLInputElement>(null);
   const joinTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const secondaryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ── Handlers ──────────────────────────────────────────────────────────────
 
@@ -47,6 +59,14 @@ export function MultiplayerLobby({ onProceed }: MultiplayerLobbyProps) {
         setJoinError('Could not connect to party. Please check the code and try again.');
       }
     }, 5000);
+
+    // Secondary fallback: if still on waiting screen after 10s, show error
+    if (secondaryTimeoutRef.current) clearTimeout(secondaryTimeoutRef.current);
+    secondaryTimeoutRef.current = setTimeout(() => {
+      if (!isPartyConnected) {
+        setTimeoutError(true);
+      }
+    }, 10000);
   }
 
   function handleCopyCode() {
@@ -66,21 +86,47 @@ export function MultiplayerLobby({ onProceed }: MultiplayerLobbyProps) {
   useEffect(() => {
     if (isPartyConnected && isJoining) {
       setIsJoining(false);
+      setTimeoutError(false);
       if (joinTimeoutRef.current) {
         clearTimeout(joinTimeoutRef.current);
         joinTimeoutRef.current = null;
       }
+      if (secondaryTimeoutRef.current) {
+        clearTimeout(secondaryTimeoutRef.current);
+        secondaryTimeoutRef.current = null;
+      }
     }
   }, [isPartyConnected, isJoining]);
 
-  // ── Cleanup timeout on unmount ───────────────────────────────────────────────
+  // ── Cleanup timeouts on unmount ───────────────────────────────────────────────
   useEffect(() => {
     return () => {
       if (joinTimeoutRef.current) {
         clearTimeout(joinTimeoutRef.current);
       }
+      if (secondaryTimeoutRef.current) {
+        clearTimeout(secondaryTimeoutRef.current);
+      }
     };
   }, []);
+
+  function handleLeaveParty() {
+    setIsLeaving(true);
+    leaveParty();
+    setView('select');
+    setIsLeaving(false);
+    setTimeoutError(false);
+    if (joinTimeoutRef.current) { clearTimeout(joinTimeoutRef.current); joinTimeoutRef.current = null; }
+    if (secondaryTimeoutRef.current) { clearTimeout(secondaryTimeoutRef.current); secondaryTimeoutRef.current = null; }
+  }
+
+  function handleRetryConnection() {
+    setTimeoutError(false);
+    leaveParty();
+    setView('joining');
+    setIsJoining(false);
+    setJoinError('Connection timed out. Please try again.');
+  }
 
   // ── Waiting screen (non-host joined, game not started yet) ─────────────────
   if (view === 'waiting' && !isPartyHost) {
@@ -99,12 +145,36 @@ export function MultiplayerLobby({ onProceed }: MultiplayerLobbyProps) {
 
           <PlayerList players={partyPlayers} />
 
-          <div className="flex flex-col items-center gap-2 pt-2">
-            <Loader2 className="w-5 h-5 text-gold animate-spin" />
-            <p className="text-sm text-muted-foreground text-center">
-              Waiting for the host to begin the adventure…
-            </p>
-          </div>
+          {timeoutError ? (
+            <div className="flex flex-col items-center gap-3 pt-2">
+              <p className="text-sm text-destructive text-center">
+                Connection is taking too long. The party may no longer exist.
+              </p>
+              <button
+                onClick={handleRetryConnection}
+                className="w-full py-2 rounded-xl bg-gold text-black font-display text-sm font-semibold hover:bg-gold/90 transition-colors"
+              >
+                Try Again
+              </button>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center gap-2 pt-2">
+              <Loader2 className="w-5 h-5 text-gold animate-spin" />
+              <p className="text-sm text-muted-foreground text-center">
+                Waiting for the host to begin the adventure…
+              </p>
+            </div>
+          )}
+
+          <button
+            onClick={handleLeaveParty}
+            disabled={isLeaving}
+            aria-label="Leave party and return to lobby"
+            className="w-full flex items-center justify-center gap-2 py-2 rounded-xl text-muted-foreground hover:text-destructive border border-border hover:border-destructive/40 text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <LogOut className="w-4 h-4" />
+            Leave Party
+          </button>
         </div>
       </div>
     );
@@ -287,6 +357,11 @@ export function MultiplayerLobby({ onProceed }: MultiplayerLobbyProps) {
 
 // ── Player list sub-component ────────────────────────────────────────────────
 
+/**
+ * Displays a list of connected party players with host indicators.
+ * Renders nothing if the players array is empty.
+ * @param props.players - Array of player objects with id, name, and isHost flag
+ */
 function PlayerList({ players }: { players: { id: string; name: string; isHost: boolean }[] }) {
   if (players.length === 0) return null;
   return (
