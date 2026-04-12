@@ -62,16 +62,20 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const partySocketRef = useRef<PartySocket | null>(null);
   // Prevent re-broadcasting state that arrived from remote
   const isSyncingFromRemote = useRef(false);
+  // Ref to avoid stale closure in broadcast effect
+  const isPartyHostRef = useRef(isPartyHost);
+  isPartyHostRef.current = isPartyHost;
 
   // ── Persist to localStorage ────────────────────────────────────────────────
   useEffect(() => { saveGameState(state); }, [state]);
 
-  // ── Broadcast state to party whenever it changes ───────────────────────────
+  // ── Broadcast state to party whenever it changes (host only) ───────────────
   useEffect(() => {
     if (isSyncingFromRemote.current) {
       isSyncingFromRemote.current = false;
       return;
     }
+    if (!isPartyHostRef.current) return;
     if (partySocketRef.current && isPartyConnected && partyCode) {
       partySocketRef.current.send(JSON.stringify({ type: 'game_update', gameState: state }));
     }
