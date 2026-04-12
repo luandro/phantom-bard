@@ -71,6 +71,17 @@ export default class GameRoom implements Party.Server {
         })
       );
     } else if (data.type === "game_update" && data.gameState !== undefined) {
+      // Only the host is authorized to update game state
+      if (!state.hostId || sender.id !== state.hostId) {
+        sender.send(
+          JSON.stringify({
+            type: "error",
+            message: "Unauthorized: only the host can update game state",
+          })
+        );
+        return;
+      }
+
       state.gameState = data.gameState;
       await this.room.storage.put("state", state);
 
