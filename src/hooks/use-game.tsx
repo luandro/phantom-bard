@@ -1,11 +1,11 @@
 import { useState, useCallback, useEffect, createContext, useContext, type ReactNode } from 'react';
-import { type GameState, type Character, type StoryEntry, type DiceRoll, PREBUILT_CAMPAIGNS, type Campaign } from '@/lib/types';
+import { type GameState, type Character, type StoryEntry, type DiceRoll, PREBUILT_CAMPAIGNS, type Campaign, type GroupPatron } from '@/lib/types';
 import { createDefaultGameState, loadGameState, saveGameState, clearGameState, createStoryEntry, rollDice, createCharacter } from '@/lib/game-store';
 
 interface GameContextType {
   state: GameState;
   isLoading: boolean;
-  startCampaign: (name: string, level: number, party: Character[]) => void;
+  startCampaign: (name: string, level: number, party: Character[], patron?: GroupPatron) => void;
   addStoryEntry: (entry: StoryEntry) => void;
   updateCharacter: (id: string, updates: Partial<Character>) => void;
   performDiceRoll: (sides: number, modifier?: number) => DiceRoll;
@@ -47,7 +47,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
     return roll;
   }, [addStoryEntry]);
 
-  const startCampaign = useCallback((name: string, level: number, party: Character[]) => {
+  const startCampaign = useCallback((name: string, level: number, party: Character[], patron?: GroupPatron) => {
     const matched = PREBUILT_CAMPAIGNS.find(c => c.name.toLowerCase() === name.toLowerCase());
     setMatchedCampaign(matched ?? null);
 
@@ -63,24 +63,26 @@ export function GameProvider({ children }: { children: ReactNode }) {
       currentTurn: 0,
       isInCombat: false,
       gameStarted: true,
+      groupPatron: patron,
     });
 
     // Trigger AI for initial scene
     setTimeout(() => {
-      sendInitialScene(name, level, party, matched ?? null);
+      sendInitialScene(name, level, party, matched ?? null, patron);
     }, 500);
   }, []);
 
-  const sendInitialScene = async (name: string, level: number, party: Character[], campaign: Campaign | null) => {
+  const sendInitialScene = async (name: string, level: number, party: Character[], campaign: Campaign | null, patron?: GroupPatron) => {
     setIsLoading(true);
     try {
       const partyDesc = party.map(c => `${c.name} (Level ${c.level} ${c.race} ${c.class}, HP: ${c.hp}/${c.maxHp})`).join(', ');
       const campaignContext = campaign
         ? `Campaign: "${campaign.name}". Quest: ${campaign.questHook}. Tone: ${campaign.tone}. Key locations: ${campaign.locations.join(', ')}. Enemies: ${campaign.enemies.join(', ')}.`
         : `Original campaign: "${name}". Create a compelling opening scene.`;
+      const patronCtx = patron ? ` The party is sponsored by "${patron.name}" (${patron.type}): ${patron.description}. Perks: ${patron.perks.join(', ')}.` : '';
 
       const response = await callAIDM([
-        { role: 'user', content: `Begin the campaign. ${campaignContext} Party: ${partyDesc}. Level: ${level}. Set the scene with vivid description, present the party with their first situation, and give them clear choices for what to do next. Keep it to 2-3 paragraphs.` }
+        { role: 'user', content: `Begin the campaign. ${campaignContext}${patronCtx} Party: ${partyDesc}. Level: ${level}. Set the scene with vivid description, present the party with their first situation, and give them clear choices for what to do next. Keep it to 2-3 paragraphs.` }
       ]);
 
       setState(prev => ({
@@ -115,9 +117,10 @@ export function GameProvider({ children }: { children: ReactNode }) {
 
       const campaign = matchedCampaign;
       const campaignCtx = campaign ? `Campaign: "${campaign.name}". Tone: ${campaign.tone}.` : `Campaign: "${state.campaignName}".`;
+      const patronCtx = state.groupPatron ? ` Party patron: "${state.groupPatron.name}" (${state.groupPatron.type}).` : '';
 
       const response = await callAIDM([
-        { role: 'system', content: `You are a D&D Dungeon Master. ${campaignCtx} Party: ${partyDesc}. Rules: 1) Request dice rolls for uncertain outcomes using [ROLL:d20+modifier] format. 2) Adapt difficulty to party level ${state.campaignLevel}. 3) Be descriptive and immersive. 4) Present clear choices. 5) If combat starts, describe enemy positions. 6) Track HP changes with [HP:characterName:-amount] or [HP:characterName:+amount]. 7) Never resolve uncertain outcomes without dice.` },
+        { role: 'system', content: `You are a D&D Dungeon Master. ${campaignCtx}${patronCtx} Party: ${partyDesc}. Rules: 1) Request dice rolls for uncertain outcomes using [ROLL:d20+modifier] format. 2) Adapt difficulty to party level ${state.campaignLevel}. 3) Be descriptive and immersive. 4) Present clear choices. 5) If combat starts, describe enemy positions. 6) Track HP changes with [HP:characterName:-amount] or [HP:characterName:+amount]. 7) Never resolve uncertain outcomes without dice. 8) Occasionally introduce puzzles (riddles, logic challenges, ciphers) that players must solve. 9) Reference subclass abilities when characters use class features. 10) If the party has a patron, weave their influence into the story.` },
         { role: 'user', content: `Recent events:\n${recentLog}\n\nPlayer action: ${activeChar?.name ?? 'Player'} says: "${action}"\n\nRespond as the DM. Keep to 2-3 paragraphs.` }
       ]);
 
