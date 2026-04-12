@@ -72,7 +72,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
     }, 500);
   }, []);
 
-  const sendInitialScene = async (name: string, level: number, party: Character[], campaign: Campaign | null) => {
+  const sendInitialScene = async (name: string, level: number, party: Character[], campaign: Campaign | null, patron?: GroupPatron) => {
     setIsLoading(true);
     try {
       const partyDesc = party.map(c => `${c.name} (Level ${c.level} ${c.race} ${c.class}, HP: ${c.hp}/${c.maxHp})`).join(', ');
