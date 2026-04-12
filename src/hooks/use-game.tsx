@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, createContext, useContext, type ReactNode } from 'react';
-import { type GameState, type Character, type StoryEntry, type DiceRoll, PREBUILT_CAMPAIGNS, type Campaign } from '@/lib/types';
+import { type GameState, type Character, type StoryEntry, type DiceRoll, PREBUILT_CAMPAIGNS, type Campaign, type GroupPatron } from '@/lib/types';
 import { createDefaultGameState, loadGameState, saveGameState, clearGameState, createStoryEntry, rollDice, createCharacter } from '@/lib/game-store';
 
 interface GameContextType {
