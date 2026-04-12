@@ -161,12 +161,16 @@ export default class GameRoom implements Party.Server {
   // Task 14: Server error handler
   onError(conn: Party.Connection, error: Error) {
     console.error(`Party connection error (${conn.id}):`, error);
-    conn.send(
-      JSON.stringify({
-        type: "error",
-        message: "An internal server error occurred",
-      })
-    );
+    try {
+      conn.send(
+        JSON.stringify({
+          type: "error",
+          message: "An internal server error occurred",
+        })
+      );
+    } catch {
+      // Connection may be in a failed state; ignore send errors
+    }
   }
 }
 
