@@ -66,13 +66,15 @@ export function GameScreen() {
           >
             {showMobileMenu ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
           </button>
-          <button
-            onClick={resetGame}
-            className="p-2 text-muted-foreground hover:text-danger transition-colors"
-            title="End campaign"
-          >
-            <RotateCcw className="w-4 h-4" />
-          </button>
+          {(!inParty || isPartyHost) && (
+            <button
+              onClick={resetGame}
+              className="p-2 text-muted-foreground hover:text-danger transition-colors"
+              title="End campaign"
+            >
+              <RotateCcw className="w-4 h-4" />
+            </button>
+          )}
         </div>
       </header>
 

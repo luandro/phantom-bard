@@ -263,7 +263,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
     });
 
     socket.addEventListener('message', (event: MessageEvent<string>) => {
-      const data = JSON.parse(event.data) as {
+      let data: {
         type: string;
         players?: PartyPlayer[];
         player?: PartyPlayer;
@@ -271,6 +271,24 @@ export function GameProvider({ children }: { children: ReactNode }) {
         gameState?: GameState;
         playerId?: string;
       };
+      try {
+        data = JSON.parse(event.data) as {
+          type: string;
+          players?: PartyPlayer[];
+          player?: PartyPlayer;
+          hostId?: string | null;
+          gameState?: GameState;
+          playerId?: string;
+        };
+      } catch {
+        console.warn('Received invalid JSON from party server');
+        return;
+      }
+
+      if (typeof data.type !== 'string') {
+        console.warn('Received message with missing or invalid type');
+        return;
+      }
 
       if (data.type === 'sync') {
         setPartyPlayers(data.players ?? []);

@@ -33,11 +33,22 @@ export default class GameRoom implements Party.Server {
   }
 
   async onMessage(message: string, sender: Party.Connection) {
-    const data = JSON.parse(message) as {
-      type: string;
-      playerName?: string;
-      gameState?: unknown;
-    };
+    let data: { type: string; playerName?: string; gameState?: unknown };
+    try {
+      data = JSON.parse(message) as {
+        type: string;
+        playerName?: string;
+        gameState?: unknown;
+      };
+    } catch {
+      sender.send(JSON.stringify({ type: "error", message: "Invalid JSON" }));
+      return;
+    }
+
+    if (typeof data.type !== "string") {
+      sender.send(JSON.stringify({ type: "error", message: "Missing or invalid message type" }));
+      return;
+    }
 
     const state = (await this.room.storage.get<RoomState>("state")) ?? {
       players: [],
