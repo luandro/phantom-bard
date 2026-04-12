@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useRef } from "react";
+import { useState } from "react";
 import { GameProvider, useGame } from "@/hooks/use-game";
 import { GameSetup } from "@/components/GameSetup";
 import { GameScreen } from "@/components/GameScreen";
@@ -18,25 +18,23 @@ export const Route = createFileRoute("/")({
 });
 
 function Index() {
+  const [pastLobby, setPastLobby] = useState(false);
   return (
     <GameProvider>
-      <GameRouter />
+      <GameRouter pastLobby={pastLobby} onProceed={() => setPastLobby(true)} />
     </GameProvider>
   );
 }
 
-function GameRouter() {
-  const { state, isPartyHost, partyCode, isPartyConnected } = useGame();
-  const pastLobby = useRef(false);
-
-  // A non-host player who has joined a party will wait here until the host
-  // starts the campaign (at which point state.gameStarted becomes true via sync).
-  const isNonHostWaiting = partyCode && !isPartyHost && isPartyConnected && !state.gameStarted;
+function GameRouter({ pastLobby, onProceed }: { pastLobby: boolean; onProceed: () => void }) {
+  const { state, isPartyHost, partyCode } = useGame();
 
   if (state.gameStarted) return <GameScreen />;
 
-  if (!pastLobby.current || isNonHostWaiting || (partyCode && !isPartyHost && !state.gameStarted)) {
-    return <MultiplayerLobby onProceed={() => { pastLobby.current = true; }} />;
+  // Non-host in a party (connected or disconnected) without a started game
+  // should stay in the lobby, not be dropped into GameSetup.
+  if (!pastLobby || (partyCode && !isPartyHost && !state.gameStarted)) {
+    return <MultiplayerLobby onProceed={onProceed} />;
   }
 
   return <GameSetup />;
