@@ -28,9 +28,11 @@ export function MultiplayerLobby({ onProceed }: MultiplayerLobbyProps) {
   const [copied, setCopied] = useState(false);
   const [isJoining, setIsJoining] = useState(false);
   const [timeoutError, setTimeoutError] = useState(false);
+  const [createTimeoutError, setCreateTimeoutError] = useState(false);
   const codeInputRef = useRef<HTMLInputElement>(null);
   const joinTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const secondaryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const createTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Ref for isPartyConnected to avoid stale closure in timeout callbacks
   const isPartyConnectedRef = useRef(isPartyConnected);
   isPartyConnectedRef.current = isPartyConnected;
@@ -39,8 +41,17 @@ export function MultiplayerLobby({ onProceed }: MultiplayerLobbyProps) {
 
   function handleCreateParty() {
     if (!hostName.trim()) return;
+    setCreateTimeoutError(false);
     createParty(hostName.trim());
     setView('creating');
+
+    // Timeout fallback: if not connected after 8s, show error on creating screen
+    if (createTimeoutRef.current) clearTimeout(createTimeoutRef.current);
+    createTimeoutRef.current = setTimeout(() => {
+      if (!isPartyConnectedRef.current) {
+        setCreateTimeoutError(true);
+      }
+    }, 8000);
   }
 
   function handleJoinParty() {
@@ -100,6 +111,17 @@ export function MultiplayerLobby({ onProceed }: MultiplayerLobbyProps) {
     }
   }, [isPartyConnected, isJoining]);
 
+  // ── Clear create timeout when connection succeeds ──────────────────────────
+  useEffect(() => {
+    if (isPartyConnected && createTimeoutError) {
+      setCreateTimeoutError(false);
+      if (createTimeoutRef.current) {
+        clearTimeout(createTimeoutRef.current);
+        createTimeoutRef.current = null;
+      }
+    }
+  }, [isPartyConnected, createTimeoutError]);
+
   // ── Cleanup timeouts on unmount ───────────────────────────────────────────────
   useEffect(() => {
     return () => {
@@ -109,6 +131,9 @@ export function MultiplayerLobby({ onProceed }: MultiplayerLobbyProps) {
       if (secondaryTimeoutRef.current) {
         clearTimeout(secondaryTimeoutRef.current);
       }
+      if (createTimeoutRef.current) {
+        clearTimeout(createTimeoutRef.current);
+      }
     };
   }, []);
 
@@ -116,8 +141,17 @@ export function MultiplayerLobby({ onProceed }: MultiplayerLobbyProps) {
     leaveParty();
     setView('select');
     setTimeoutError(false);
+    setCreateTimeoutError(false);
     if (joinTimeoutRef.current) { clearTimeout(joinTimeoutRef.current); joinTimeoutRef.current = null; }
     if (secondaryTimeoutRef.current) { clearTimeout(secondaryTimeoutRef.current); secondaryTimeoutRef.current = null; }
+    if (createTimeoutRef.current) { clearTimeout(createTimeoutRef.current); createTimeoutRef.current = null; }
+  }
+
+  function handleRetryCreateConnection() {
+    setCreateTimeoutError(false);
+    if (createTimeoutRef.current) { clearTimeout(createTimeoutRef.current); createTimeoutRef.current = null; }
+    leaveParty();
+    setView('select');
   }
 
   function handleRetryConnection() {
@@ -214,12 +248,53 @@ export function MultiplayerLobby({ onProceed }: MultiplayerLobbyProps) {
 
           <PlayerList players={partyPlayers} />
 
+          {/* Connection status indicator */}
+          {!isPartyConnected && !createTimeoutError && (
+            <div className="flex items-center justify-center gap-2 py-1">
+              <Loader2 className="w-4 h-4 text-gold animate-spin" />
+              <p className="text-xs text-muted-foreground">Connecting to party server…</p>
+            </div>
+          )}
+          {isPartyConnected && (
+            <div className="flex items-center justify-center gap-2 py-1">
+              <div className="w-2 h-2 rounded-full bg-green-400" />
+              <p className="text-xs text-green-400">Connected</p>
+            </div>
+          )}
+
+          {/* Connection timeout error */}
+          {createTimeoutError && (
+            <div className="space-y-2 rounded-lg border border-destructive/40 bg-destructive/5 p-3">
+              <p className="text-sm text-destructive text-center">
+                Could not connect to the party server.
+              </p>
+              <p className="text-xs text-muted-foreground text-center">
+                Make sure the PartyKit server is running (<code className="bg-secondary px-1 rounded">bun run dev:party</code>) or set <code className="bg-secondary px-1 rounded">VITE_PARTYKIT_HOST</code> in your .env file.
+              </p>
+              <button
+                onClick={handleRetryCreateConnection}
+                className="w-full py-2 rounded-xl bg-gold text-black font-display text-sm font-semibold hover:bg-gold/90 transition-colors"
+              >
+                Try Again
+              </button>
+            </div>
+          )}
+
           <button
             onClick={onProceed}
             disabled={!isPartyConnected}
             className="w-full py-3 rounded-xl bg-gold text-black font-display text-sm font-semibold hover:bg-gold/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             Continue to Campaign Setup →
+          </button>
+
+          <button
+            onClick={handleLeaveParty}
+            aria-label="Leave party and return to lobby"
+            className="w-full flex items-center justify-center gap-2 py-2 rounded-xl text-muted-foreground hover:text-destructive border border-border hover:border-destructive/40 text-sm transition-colors"
+          >
+            <LogOut className="w-4 h-4" />
+            Cancel
           </button>
 
           <p className="text-xs text-center text-muted-foreground">
