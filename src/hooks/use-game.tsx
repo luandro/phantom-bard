@@ -207,8 +207,12 @@ export function GameProvider({ children }: { children: ReactNode }) {
 }
 
 async function callAIDM(messages: { role: string; content: string }[]): Promise<string> {
-  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-  const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || (typeof process !== 'undefined' ? process.env?.SUPABASE_URL : undefined);
+  const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || (typeof process !== 'undefined' ? process.env?.SUPABASE_PUBLISHABLE_KEY : undefined);
+
+  if (!supabaseUrl || !supabaseKey) {
+    throw new Error('Missing Supabase environment variables');
+  }
 
   const resp = await fetch(`${supabaseUrl}/functions/v1/dm-chat`, {
     method: 'POST',
@@ -220,6 +224,8 @@ async function callAIDM(messages: { role: string; content: string }[]): Promise<
   });
 
   if (!resp.ok) {
+    const errorText = await resp.text().catch(() => '');
+    console.error('DM chat error:', resp.status, errorText);
     if (resp.status === 429) throw new Error('Rate limited');
     if (resp.status === 402) throw new Error('Credits exhausted');
     throw new Error(`AI error: ${resp.status}`);
