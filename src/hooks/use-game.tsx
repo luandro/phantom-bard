@@ -37,6 +37,7 @@ function isValidCharacter(el: unknown): el is Character {
     typeof c.name === 'string' &&
     typeof c.race === 'string' &&
     typeof c.class === 'string' &&
+    typeof c.subclass === 'string' &&
     typeof c.level === 'number' &&
     typeof c.hp === 'number' &&
     typeof c.maxHp === 'number' &&
@@ -46,7 +47,9 @@ function isValidCharacter(el: unknown): el is Character {
     typeof (c.stats as Record<string, unknown>).CON === 'number' &&
     typeof (c.stats as Record<string, unknown>).INT === 'number' &&
     typeof (c.stats as Record<string, unknown>).WIS === 'number' &&
-    typeof (c.stats as Record<string, unknown>).CHA === 'number'
+    typeof (c.stats as Record<string, unknown>).CHA === 'number' &&
+    Array.isArray(c.inventory) &&
+    Array.isArray(c.spells)
   );
 }
 
