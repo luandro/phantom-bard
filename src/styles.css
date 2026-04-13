@@ -56,8 +56,6 @@
   --font-body: var(--font-family-body);
 }
 
-@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600;700;800;900&family=Crimson+Text:ital,wght@0,400;0,600;0,700;1,400&display=swap');
-
 :root {
   --radius: 0.5rem;
   --font-family-display: 'Cinzel', serif;
