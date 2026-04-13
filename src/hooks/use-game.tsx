@@ -66,6 +66,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
       isInCombat: false,
       gameStarted: true,
       groupPatron: patron,
+      lootInventory: [],
     });
 
     // Trigger AI for initial scene
@@ -122,7 +123,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
       const patronCtx = state.groupPatron ? ` Party patron: "${state.groupPatron.name}" (${state.groupPatron.type}).` : '';
 
       const response = await callAIDM([
-        { role: 'system', content: `You are a D&D Dungeon Master. ${campaignCtx}${patronCtx} Party: ${partyDesc}. Rules: 1) Request dice rolls for uncertain outcomes using [ROLL:d20+modifier] format. 2) Adapt difficulty to party level ${state.campaignLevel}. 3) Be descriptive and immersive. 4) Present clear choices. 5) If combat starts, describe enemy positions. 6) Track HP changes with [HP:characterName:-amount] or [HP:characterName:+amount]. 7) Never resolve uncertain outcomes without dice. 8) Occasionally introduce puzzles (riddles, logic challenges, ciphers) that players must solve. 9) Reference subclass abilities when characters use class features. 10) If the party has a patron, weave their influence into the story.` },
+        { role: 'system', content: `You are a D&D Dungeon Master. ${campaignCtx}${patronCtx} Party: ${partyDesc}. Rules: 1) Request dice rolls for uncertain outcomes using [ROLL:d20+modifier] format. 2) Adapt difficulty to party level ${state.campaignLevel}. 3) Be descriptive and immersive. 4) Present clear choices. 5) If combat starts, describe enemy positions. 6) Track HP changes with [HP:characterName:-amount] or [HP:characterName:+amount]. 7) Never resolve uncertain outcomes without dice. 8) Occasionally introduce puzzles (riddles, logic challenges, ciphers) that players must solve. 9) Reference subclass abilities when characters use class features. 10) If the party has a patron, weave their influence into the story. 11) After combat victories, treasure discoveries, or quest completions, award loot using [LOOT:count] format where count is number of items (e.g. [LOOT:2]). Make loot drops feel earned and exciting.` },
         { role: 'user', content: `Recent events:\n${recentLog}\n\nPlayer action: ${activeChar?.name ?? 'Player'} says: "${action}"\n\nRespond as the DM. Keep to 2-3 paragraphs.` }
       ]);
 
@@ -137,11 +138,28 @@ export function GameProvider({ children }: { children: ReactNode }) {
         }
       }
 
-      const cleanResponse = response.replace(/\[HP:[^\]]+\]/g, '').trim();
+      // Parse loot drops
+      const lootMatches = response.matchAll(/\[LOOT:(\d+)\]/g);
+      let droppedLoot: Artifact[] = [];
+      for (const match of lootMatches) {
+        const count = Math.min(parseInt(match[1]), 5);
+        const loot = generateLoot(state.campaignLevel, count);
+        droppedLoot = [...droppedLoot, ...loot];
+      }
+
+      const cleanResponse = response.replace(/\[HP:[^\]]+\]/g, '').replace(/\[LOOT:\d+\]/g, '').trim();
 
       setState(prev => ({
         ...prev,
-        storyLog: [...prev.storyLog, createStoryEntry('narration', cleanResponse)],
+        storyLog: [
+          ...prev.storyLog,
+          createStoryEntry('narration', cleanResponse),
+          ...(droppedLoot.length > 0 ? [{
+            ...createStoryEntry('loot', `The party found ${droppedLoot.length} item${droppedLoot.length > 1 ? 's' : ''}!`),
+            lootData: droppedLoot,
+          }] : []),
+        ],
+        lootInventory: [...prev.lootInventory, ...droppedLoot],
         currentTurn: prev.currentTurn + 1,
       }));
     } catch (e) {
@@ -152,6 +170,29 @@ export function GameProvider({ children }: { children: ReactNode }) {
     }
   }, [state, addStoryEntry, updateCharacter, matchedCampaign]);
 
+  const addLoot = useCallback((loot: Artifact[]) => {
+    setState(prev => ({
+      ...prev,
+      lootInventory: [...prev.lootInventory, ...loot],
+    }));
+  }, []);
+
+  const assignLoot = useCallback((artifactId: string, characterId: string) => {
+    setState(prev => ({
+      ...prev,
+      lootInventory: prev.lootInventory.map(a => a.id === artifactId ? { ...a, assignedTo: characterId } : a),
+      party: prev.party.map(c => {
+        if (c.id === characterId) {
+          const artifact = prev.lootInventory.find(a => a.id === artifactId);
+          if (artifact && !c.inventory.includes(artifact.name)) {
+            return { ...c, inventory: [...c.inventory, artifact.name] };
+          }
+        }
+        return c;
+      }),
+    }));
+  }, []);
+
   const resetGame = useCallback(() => {
     clearGameState();
     setState(createDefaultGameState());
@@ -159,7 +200,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <GameContext.Provider value={{ state, isLoading, startCampaign, addStoryEntry, updateCharacter, performDiceRoll, sendPlayerAction, resetGame, matchedCampaign }}>
+    <GameContext.Provider value={{ state, isLoading, startCampaign, addStoryEntry, updateCharacter, performDiceRoll, sendPlayerAction, resetGame, matchedCampaign, addLoot, assignLoot }}>
       {children}
     </GameContext.Provider>
   );
