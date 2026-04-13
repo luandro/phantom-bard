@@ -6,6 +6,8 @@ interface RoomState {
   gameState: unknown;
   hostId: string | null;
   stateVersion: number;
+  /** Secret token issued to the host on creation, required for host reconnection. */
+  hostSecret: string | null;
 }
 
 /**
@@ -25,6 +27,7 @@ export default class GameRoom implements Party.Server {
       gameState: null,
       hostId: null,
       stateVersion: 0,
+      hostSecret: null,
     };
 
     conn.send(
@@ -34,6 +37,7 @@ export default class GameRoom implements Party.Server {
         gameState: state.gameState,
         hostId: state.hostId,
         version: state.stateVersion,
+        hostSecret: state.hostId === conn.id ? state.hostSecret : undefined,
       })
     );
   }
@@ -69,6 +73,7 @@ export default class GameRoom implements Party.Server {
       gameState: null,
       hostId: null,
       stateVersion: 0,
+      hostSecret: null,
     };
 
     if (data.type === "hello" && data.playerName) {
@@ -90,17 +95,21 @@ export default class GameRoom implements Party.Server {
         return;
       }
 
-      // Recognize reconnecting host: either by connection ID match or by name match
-      // (connection ID changes on page refresh, so name is used as fallback)
-      const previousHost = state.hostId ? state.players.find(p => p.id === state.hostId) : null;
-      const isReconnectingHost = state.hostId === sender.id ||
-        (previousHost !== undefined && previousHost?.name === data.playerName);
+      // Recognize reconnecting host via host secret token.
+      // The secret is issued when the host first creates the room and must be
+      // presented on reconnection to reclaim host privileges.
+      const isReconnectingHost = state.hostSecret !== null && data.hostSecret === state.hostSecret;
       const isHost = intent === 'create' || isReconnectingHost;
       const player: PartyPlayer = {
         id: sender.id,
         name: data.playerName,
         isHost: isHost,
       };
+
+      if (isHost && !state.hostSecret) {
+        // Generate a secret token for the host on first assignment
+        state.hostSecret = crypto.randomUUID();
+      }
 
       if (isHost) {
         state.hostId = sender.id;
@@ -111,14 +120,22 @@ export default class GameRoom implements Party.Server {
       state.players.push(player);
       await this.room.storage.put("state", state);
 
-      this.room.broadcast(
-        JSON.stringify({
-          type: "player_joined",
-          player,
-          players: state.players,
-          hostId: state.hostId,
-        })
-      );
+      // Send host secret only to the host player
+      const broadcastMsg = JSON.stringify({
+        type: "player_joined",
+        player,
+        players: state.players,
+        hostId: state.hostId,
+      });
+      this.room.broadcast(broadcastMsg);
+
+      // Send host secret privately to the host
+      if (isHost && state.hostSecret) {
+        sender.send(JSON.stringify({
+          type: "host_secret",
+          hostSecret: state.hostSecret,
+        }));
+      }
     } else if (data.type === "game_update" && data.gameState !== undefined) {
       // Only the host is authorized to update game state
       if (!state.hostId || sender.id !== state.hostId) {

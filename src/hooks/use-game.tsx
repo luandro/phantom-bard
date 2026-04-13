@@ -114,6 +114,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const stateVersionRef = useRef(0);
   // Task 11: Debounce timeout ref for broadcast
   const broadcastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Host secret token for secure host reconnection
+  const hostSecretRef = useRef<string | null>(null);
 
   // ── Persist to localStorage ────────────────────────────────────────────────
   useEffect(() => { saveGameState(state); }, [state]);
@@ -330,7 +332,12 @@ export function GameProvider({ children }: { children: ReactNode }) {
 
     socket.addEventListener('open', () => {
       setIsPartyConnected(true);
-      socket.send(JSON.stringify({ type: 'hello', playerName: name, intent }));
+      const helloMsg: Record<string, unknown> = { type: 'hello', playerName: name, intent };
+      // Include host secret for reconnection (allows host to reclaim role after page refresh)
+      if (hostSecretRef.current) {
+        helloMsg.hostSecret = hostSecretRef.current;
+      }
+      socket.send(JSON.stringify(helloMsg));
     });
 
     socket.addEventListener('message', (event: MessageEvent<string>) => {
@@ -343,6 +350,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
         playerId?: string;
         version?: number;
         message?: string;
+        hostSecret?: string;
       };
       try {
         data = JSON.parse(event.data) as {
@@ -354,6 +362,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
           playerId?: string;
           version?: number;
           message?: string;
+          hostSecret?: string;
         };
       } catch {
         console.warn('Received invalid JSON from party server');
@@ -398,6 +407,12 @@ export function GameProvider({ children }: { children: ReactNode }) {
         // Re-check if we became host after someone left
         const me = data.players?.find(p => p.id === socket.id);
         if (me) setIsPartyHost(me.isHost);
+
+      } else if (data.type === 'host_secret') {
+        // Store the host secret for reconnection
+        if (typeof data.hostSecret === 'string') {
+          hostSecretRef.current = data.hostSecret;
+        }
 
       } else if (data.type === 'game_sync' && data.gameState) {
         // Task 12: Validate game state before applying
@@ -452,6 +467,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
     setIsPartyHost(false);
     setPartyPlayers([]);
     setPlayerName('');
+    hostSecretRef.current = null;
   }, []);
 
   // Cleanup socket on unmount
