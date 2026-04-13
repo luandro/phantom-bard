@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { GameProvider, useGame } from "@/hooks/use-game";
 import { GameSetup } from "@/components/GameSetup";
 import { GameScreen } from "@/components/GameScreen";
@@ -25,7 +25,7 @@ function Index() {
   const [pastLobby, setPastLobby] = useState(false);
   return (
     <GameProvider>
-      <GameRouter pastLobby={pastLobby} onProceed={() => setPastLobby(true)} />
+      <GameRouter pastLobby={pastLobby} setPastLobby={setPastLobby} />
     </GameProvider>
   );
 }
@@ -36,15 +36,29 @@ function Index() {
  * - If the user hasn't passed the lobby or is a non-host in a party, shows {@link MultiplayerLobby}.
  * - Otherwise, shows {@link GameSetup}.
  */
-function GameRouter({ pastLobby, onProceed }: { pastLobby: boolean; onProceed: () => void }) {
+function GameRouter({ pastLobby, setPastLobby }: { pastLobby: boolean; setPastLobby: (v: boolean) => void }) {
   const { state, isPartyHost, partyCode } = useGame();
+
+  // Reset pastLobby when game is reset or party is left, so the lobby
+  // is shown again on the next visit instead of skipping to GameSetup.
+  const prevGameStarted = useRef(state.gameStarted);
+  const prevPartyCode = useRef(partyCode);
+
+  if (!state.gameStarted && prevGameStarted.current) {
+    setPastLobby(false);
+  }
+  if (!partyCode && prevPartyCode.current) {
+    setPastLobby(false);
+  }
+  prevGameStarted.current = state.gameStarted;
+  prevPartyCode.current = partyCode;
 
   if (state.gameStarted) return <GameScreen />;
 
   // Non-host in a party (connected or disconnected) without a started game
   // should stay in the lobby, not be dropped into GameSetup.
   if (!pastLobby || (partyCode && !isPartyHost && !state.gameStarted)) {
-    return <MultiplayerLobby onProceed={onProceed} />;
+    return <MultiplayerLobby onProceed={() => setPastLobby(true)} />;
   }
 
   return <GameSetup />;

@@ -164,11 +164,12 @@ export function GameProvider({ children }: { children: ReactNode }) {
   // ── Broadcast state to party whenever it changes (host only) ───────────────
   // Task 11: 300ms debounce, Task 15: refs for stable values, Task 16: version
   useEffect(() => {
+    if (!isPartyHostRef.current) return;
+
     const serialized = JSON.stringify(state);
     if (lastSyncedStateRef.current === serialized) {
       return;
     }
-    if (!isPartyHostRef.current) return;
 
     // Task 11: Clear previous timeout and set new one for debounce
     if (broadcastTimeoutRef.current !== null) {
@@ -376,6 +377,18 @@ export function GameProvider({ children }: { children: ReactNode }) {
 
       if (data.type === 'error') {
         console.warn('Server error:', data.message);
+        // Only disconnect on fatal errors (room join/create failures).
+        // Non-fatal errors like "Stale version" or "Unauthorized" should not
+        // disconnect the client — the socket is still valid.
+        const fatalMessages = [
+          'Room already exists',
+          'Room does not exist yet',
+          'Invalid JSON',
+          'Missing or invalid message type',
+        ];
+        if (fatalMessages.some(m => data.message?.startsWith(m))) {
+          setIsPartyConnected(false);
+        }
         return;
       }
 
@@ -447,6 +460,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
     setPartyCode(code);
     setPlayerName(name);
     setIsPartyHost(true);
+    // Clear stale host secret from a previous party before connecting
+    hostSecretRef.current = null;
     connectToRoom(code, name, 'create');
     return code;
   }, [connectToRoom]);
