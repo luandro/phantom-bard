@@ -116,6 +116,9 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const broadcastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Host secret token for secure host reconnection
   const hostSecretRef = useRef<string | null>(null);
+  // Ref for latest state to avoid stale closure in debounced broadcast
+  const latestStateRef = useRef(state);
+  latestStateRef.current = state;
 
   // ── Persist to localStorage ────────────────────────────────────────────────
   useEffect(() => { saveGameState(state); }, [state]);
@@ -135,11 +138,11 @@ export function GameProvider({ children }: { children: ReactNode }) {
     }
 
     broadcastTimeoutRef.current = setTimeout(() => {
-      if (partySocketRef.current && isPartyConnectedRef.current && partyCodeRef.current) {
+      if (partySocketRef.current && isPartyConnectedRef.current && partyCodeRef.current && isPartyHostRef.current) {
         stateVersionRef.current += 1;
         partySocketRef.current.send(JSON.stringify({
           type: 'game_update',
-          gameState: state,
+          gameState: latestStateRef.current,
           version: stateVersionRef.current,
         }));
       }
