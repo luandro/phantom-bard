@@ -37,7 +37,6 @@ export default class GameRoom implements Party.Server {
         gameState: state.gameState,
         hostId: state.hostId,
         version: state.stateVersion,
-        hostSecret: state.hostId === conn.id ? state.hostSecret : undefined,
       })
     );
   }
@@ -49,7 +48,7 @@ export default class GameRoom implements Party.Server {
    * - `game_update`: Updates game state (host-only, with stale version rejection).
    */
   async onMessage(message: string, sender: Party.Connection) {
-    let data: { type: string; playerName?: string; intent?: 'create' | 'join'; gameState?: unknown; version?: number };
+    let data: { type: string; playerName?: string; intent?: 'create' | 'join'; gameState?: unknown; version?: number; hostSecret?: string };
     try {
       data = JSON.parse(message) as {
         type: string;
@@ -57,6 +56,7 @@ export default class GameRoom implements Party.Server {
         intent?: 'create' | 'join';
         gameState?: unknown;
         version?: number;
+        hostSecret?: string;
       };
     } catch {
       sender.send(JSON.stringify({ type: "error", message: "Invalid JSON" }));
@@ -79,8 +79,16 @@ export default class GameRoom implements Party.Server {
     if (data.type === "hello" && data.playerName) {
       const intent = data.intent ?? 'join';
 
+      // Recognize reconnecting host via host secret token.
+      // The secret is issued when the host first creates the room and must be
+      // presented on reconnection to reclaim host privileges.
+      const isReconnectingHost = state.hostSecret !== null && data.hostSecret === state.hostSecret;
+
       // Validate intent against room state
-      if (intent === 'create' && state.players.length > 0 && state.hostId !== sender.id) {
+      // Check reconnecting host BEFORE rejecting create intent — a host that
+      // created the party will reconnect with intent='create' and should be
+      // allowed back in even if other players are present.
+      if (intent === 'create' && state.players.length > 0 && !isReconnectingHost) {
         sender.send(JSON.stringify({
           type: "error",
           message: "Room already exists. Use join instead.",
@@ -95,10 +103,6 @@ export default class GameRoom implements Party.Server {
         return;
       }
 
-      // Recognize reconnecting host via host secret token.
-      // The secret is issued when the host first creates the room and must be
-      // presented on reconnection to reclaim host privileges.
-      const isReconnectingHost = state.hostSecret !== null && data.hostSecret === state.hostSecret;
       const isHost = intent === 'create' || isReconnectingHost;
       const player: PartyPlayer = {
         id: sender.id,
@@ -186,6 +190,7 @@ export default class GameRoom implements Party.Server {
       gameState: null,
       hostId: null,
       stateVersion: 0,
+      hostSecret: null,
     };
 
     state.players = state.players.filter((p) => p.id !== conn.id);
@@ -195,8 +200,19 @@ export default class GameRoom implements Party.Server {
       if (state.players.length > 0) {
         state.hostId = state.players[0].id;
         state.players[0].isHost = true;
+        // Reset hostSecret so the old host cannot reclaim after promotion
+        state.hostSecret = crypto.randomUUID();
+        // Send the new secret to the promoted host
+        const newHost = this.room.getConnection(state.players[0].id);
+        if (newHost) {
+          newHost.send(JSON.stringify({
+            type: "host_secret",
+            hostSecret: state.hostSecret,
+          }));
+        }
       } else {
         state.hostId = null;
+        state.hostSecret = null;
       }
     }
 

@@ -113,14 +113,14 @@ export function MultiplayerLobby({ onProceed }: MultiplayerLobbyProps) {
 
   // ── Clear create timeout when connection succeeds ──────────────────────────
   useEffect(() => {
-    if (isPartyConnected && createTimeoutError) {
+    if (isPartyConnected) {
       setCreateTimeoutError(false);
       if (createTimeoutRef.current) {
         clearTimeout(createTimeoutRef.current);
         createTimeoutRef.current = null;
       }
     }
-  }, [isPartyConnected, createTimeoutError]);
+  }, [isPartyConnected]);
 
   // ── Cleanup timeouts on unmount ───────────────────────────────────────────────
   useEffect(() => {
