@@ -3,12 +3,13 @@ import { StoryLog } from '@/components/StoryLog';
 import { PartyPanel } from '@/components/PartyPanel';
 import { DiceRoller } from '@/components/DiceRoller';
 import { ActionBar } from '@/components/ActionBar';
+import { LootPanel } from '@/components/LootPanel';
 import { useState } from 'react';
-import { Scroll, Users, Dice6, RotateCcw, Menu, X } from 'lucide-react';
+import { Scroll, Users, Dice6, RotateCcw, Menu, X, Gift } from 'lucide-react';
 
 export function GameScreen() {
   const { state, resetGame } = useGame();
-  const [sidePanel, setSidePanel] = useState<'party' | 'dice' | null>(null);
+  const [sidePanel, setSidePanel] = useState<'party' | 'dice' | 'loot' | null>(null);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
 
   return (
@@ -33,6 +34,12 @@ export function GameScreen() {
               className={`p-2 rounded-lg transition-colors ${sidePanel === 'dice' ? 'bg-gold/20 text-gold' : 'text-muted-foreground hover:text-foreground'}`}
             >
               <Dice6 className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => setSidePanel(sidePanel === 'loot' ? null : 'loot')}
+              className={`p-2 rounded-lg transition-colors ${sidePanel === 'loot' ? 'bg-gold/20 text-gold' : 'text-muted-foreground hover:text-foreground'}`}
+            >
+              <Gift className="w-4 h-4" />
             </button>
           </div>
           {/* Mobile menu */}
@@ -67,6 +74,12 @@ export function GameScreen() {
           >
             <Dice6 className="w-4 h-4" /> Dice
           </button>
+          <button
+            onClick={() => { setSidePanel(sidePanel === 'loot' ? null : 'loot'); setShowMobileMenu(false); }}
+            className="flex-1 flex items-center justify-center gap-2 py-2 bg-secondary text-secondary-foreground rounded-lg text-sm font-display"
+          >
+            <Gift className="w-4 h-4" /> Loot
+          </button>
         </div>
       )}
 
@@ -83,6 +96,7 @@ export function GameScreen() {
           <aside className="w-64 md:w-72 border-l border-border bg-card/50 overflow-y-auto scrollbar-fantasy shrink-0">
             {sidePanel === 'party' && <PartyPanel />}
             {sidePanel === 'dice' && <DiceRoller />}
+            {sidePanel === 'loot' && <LootPanel />}
           </aside>
         )}
       </div>

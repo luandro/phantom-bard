@@ -11,6 +11,7 @@ export function createDefaultGameState(): GameState {
     currentTurn: 0,
     isInCombat: false,
     gameStarted: false,
+    lootInventory: [],
   };
 }
 
