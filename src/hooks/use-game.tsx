@@ -27,6 +27,30 @@ function generatePartyCode(): string {
  * @param data - The value to validate
  * @returns True if the data is a valid GameState
  */
+const STORY_ENTRY_TYPES = new Set<string>(['narration', 'player', 'system', 'dice', 'puzzle']);
+
+function isValidPartyPlayer(el: unknown): el is PartyPlayer {
+  if (typeof el !== 'object' || el === null) return false;
+  const p = el as Record<string, unknown>;
+  return (
+    typeof p.id === 'string' &&
+    typeof p.name === 'string' &&
+    typeof p.isHost === 'boolean'
+  );
+}
+
+function isValidStoryEntry(el: unknown): el is StoryEntry {
+  if (typeof el !== 'object' || el === null) return false;
+  const s = el as Record<string, unknown>;
+  return (
+    typeof s.id === 'string' &&
+    typeof s.type === 'string' &&
+    STORY_ENTRY_TYPES.has(s.type as string) &&
+    typeof s.content === 'string' &&
+    typeof s.timestamp === 'number'
+  );
+}
+
 function isValidGameState(data: unknown): data is GameState {
   if (typeof data !== 'object' || data === null) return false;
   const d = data as Record<string, unknown>;
@@ -37,7 +61,9 @@ function isValidGameState(data: unknown): data is GameState {
     Array.isArray(d.storyLog) &&
     typeof d.currentTurn === 'number' &&
     typeof d.isInCombat === 'boolean' &&
-    typeof d.gameStarted === 'boolean'
+    typeof d.gameStarted === 'boolean' &&
+    (d.party as unknown[]).every(isValidPartyPlayer) &&
+    (d.storyLog as unknown[]).every(isValidStoryEntry)
   );
 }
 
