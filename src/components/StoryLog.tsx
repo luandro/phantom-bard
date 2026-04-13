@@ -2,7 +2,7 @@ import { useRef, useEffect, useState, useCallback } from 'react';
 import { useGame } from '@/hooks/use-game';
 import { motion } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
-import { BookOpen, User, Dice6, Info, Volume2, VolumeX, Loader2 } from 'lucide-react';
+import { BookOpen, User, Dice6, Info, Volume2, VolumeX, Loader2, Gift } from 'lucide-react';
 
 declare global {
   interface Window {
@@ -91,6 +91,7 @@ export function StoryLog() {
     dice: <Dice6 className="w-4 h-4 text-magic" />,
     system: <Info className="w-4 h-4 text-muted-foreground" />,
     puzzle: <Dice6 className="w-4 h-4 text-gold" />,
+    loot: <Gift className="w-4 h-4 text-gold" />,
   };
 
   const colorMap: Record<string, string> = {
@@ -99,6 +100,15 @@ export function StoryLog() {
     dice: 'border-l-magic/40',
     system: 'border-l-muted-foreground/40',
     puzzle: 'border-l-gold/40',
+    loot: 'border-l-gold/60',
+  };
+
+  const rarityStyles: Record<string, string> = {
+    common: 'bg-muted/40 text-muted-foreground border-muted-foreground/20',
+    uncommon: 'bg-success/10 text-success border-success/30',
+    rare: 'bg-blue-500/10 text-blue-400 border-blue-400/30',
+    very_rare: 'bg-magic/10 text-magic border-magic/30',
+    legendary: 'bg-gold/15 text-gold border-gold/40',
   };
 
   return (
@@ -137,6 +147,21 @@ export function StoryLog() {
             </div>
           ) : entry.type === 'dice' ? (
             <p className="text-magic font-display text-sm">{entry.content}</p>
+          ) : entry.type === 'loot' && entry.lootData ? (
+            <div className="space-y-1.5">
+              <p className="text-sm text-gold font-display">{entry.content}</p>
+              <div className="flex flex-wrap gap-1.5">
+                {entry.lootData.map(item => (
+                  <span
+                    key={item.id}
+                    className={`text-xs px-2 py-1 rounded-lg border ${rarityStyles[item.rarity]}`}
+                    title={`${item.description}${item.effect ? ` — ${item.effect}` : ''}`}
+                  >
+                    {item.name} <span className="opacity-60">({item.rarity.replace('_', ' ')})</span>
+                  </span>
+                ))}
+              </div>
+            </div>
           ) : (
             <p className={`text-sm ${entry.type === 'player' ? 'text-foreground italic' : 'text-muted-foreground'}`}>
               {entry.content}
