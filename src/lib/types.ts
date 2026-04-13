@@ -39,13 +39,25 @@ export interface DiceRoll {
   timestamp: number;
 }
 
+export interface Artifact {
+  id: string;
+  name: string;
+  rarity: 'common' | 'uncommon' | 'rare' | 'very_rare' | 'legendary';
+  type: 'weapon' | 'armor' | 'potion' | 'scroll' | 'wondrous' | 'ring' | 'wand' | 'artifact';
+  description: string;
+  effect?: string;
+  value?: number;
+  assignedTo?: string; // character id
+}
+
 export interface StoryEntry {
   id: string;
-  type: 'narration' | 'player' | 'system' | 'dice' | 'puzzle';
+  type: 'narration' | 'player' | 'system' | 'dice' | 'puzzle' | 'loot';
   content: string;
   timestamp: number;
   characterName?: string;
   puzzleData?: PuzzleData;
+  lootData?: Artifact[];
 }
 
 export interface PuzzleData {
@@ -64,6 +76,67 @@ export interface GameState {
   isInCombat: boolean;
   gameStarted: boolean;
   groupPatron?: GroupPatron;
+  lootInventory: Artifact[];
+}
+
+// ─── Loot Tables ───
+
+const RARITY_BY_LEVEL: Record<number, Artifact['rarity'][]> = {
+  1: ['common', 'uncommon'],
+  3: ['common', 'uncommon', 'rare'],
+  5: ['uncommon', 'rare'],
+  8: ['uncommon', 'rare', 'very_rare'],
+  11: ['rare', 'very_rare'],
+  15: ['rare', 'very_rare', 'legendary'],
+  17: ['very_rare', 'legendary'],
+};
+
+export function getRarityPool(level: number): Artifact['rarity'][] {
+  const keys = Object.keys(RARITY_BY_LEVEL).map(Number).sort((a, b) => a - b);
+  let pool: Artifact['rarity'][] = ['common', 'uncommon'];
+  for (const k of keys) {
+    if (level >= k) pool = RARITY_BY_LEVEL[k];
+  }
+  return pool;
+}
+
+export const LOOT_TABLE: Omit<Artifact, 'id' | 'assignedTo'>[] = [
+  // Common
+  { name: 'Potion of Healing', rarity: 'common', type: 'potion', description: 'A vial of red liquid that restores 2d4+2 HP.', effect: 'Heal 2d4+2 HP', value: 50 },
+  { name: 'Driftglobe', rarity: 'common', type: 'wondrous', description: 'A glass orb that casts Light or Daylight.', effect: 'Cast Light/Daylight', value: 75 },
+  { name: 'Bag of Holding', rarity: 'uncommon', type: 'wondrous', description: 'An extradimensional bag that holds up to 500 lbs.', effect: 'Extra storage', value: 200 },
+  // Uncommon
+  { name: 'Cloak of Protection', rarity: 'uncommon', type: 'wondrous', description: 'A magical cloak granting +1 to AC and saving throws.', effect: '+1 AC, +1 saves', value: 300 },
+  { name: 'Gauntlets of Ogre Power', rarity: 'uncommon', type: 'wondrous', description: 'Gauntlets that set STR to 19.', effect: 'STR becomes 19', value: 400 },
+  { name: 'Boots of Elvenkind', rarity: 'uncommon', type: 'wondrous', description: 'Soft boots that grant advantage on Stealth checks.', effect: 'Advantage on Stealth', value: 250 },
+  { name: '+1 Longsword', rarity: 'uncommon', type: 'weapon', description: 'A finely forged blade with a magical edge.', effect: '+1 to attack and damage', value: 350 },
+  // Rare
+  { name: 'Flame Tongue Sword', rarity: 'rare', type: 'weapon', description: 'A blade that erupts in fire on command, dealing 2d6 extra fire damage.', effect: '+2d6 fire damage', value: 1500 },
+  { name: 'Amulet of Health', rarity: 'rare', type: 'wondrous', description: 'An amulet that sets CON to 19.', effect: 'CON becomes 19', value: 1200 },
+  { name: 'Ring of Protection', rarity: 'rare', type: 'ring', description: 'A platinum ring granting +1 to AC and saves.', effect: '+1 AC, +1 saves', value: 1000 },
+  { name: 'Wand of Fireballs', rarity: 'rare', type: 'wand', description: 'A wand with 7 charges, each casting Fireball.', effect: 'Cast Fireball (7 charges)', value: 2000 },
+  // Very Rare
+  { name: 'Staff of Power', rarity: 'very_rare', type: 'wand', description: 'A mighty staff granting +2 to AC, saves, and spell attacks.', effect: '+2 AC, saves, spell attacks', value: 5000 },
+  { name: 'Dancing Sword', rarity: 'very_rare', type: 'weapon', description: 'A sentient sword that fights on its own in the air.', effect: 'Attacks autonomously', value: 4000 },
+  { name: 'Cloak of Displacement', rarity: 'very_rare', type: 'wondrous', description: 'An illusory cloak causing attacks against you to have disadvantage.', effect: 'Disadvantage on attacks against you', value: 4500 },
+  // Legendary
+  { name: 'Vorpal Sword', rarity: 'legendary', type: 'weapon', description: 'A blade of impossible sharpness — on a nat 20, it severs heads.', effect: 'Decapitate on crit', value: 25000 },
+  { name: 'Ring of Three Wishes', rarity: 'legendary', type: 'ring', description: 'A ring holding three charges of the Wish spell.', effect: 'Cast Wish (3 charges)', value: 50000 },
+  { name: 'Robe of the Archmagi', rarity: 'legendary', type: 'wondrous', description: 'Robes that set AC to 15 + DEX and grant advantage on saves vs magic.', effect: 'AC 15+DEX, adv vs magic', value: 30000 },
+  { name: 'Holy Avenger', rarity: 'legendary', type: 'weapon', description: 'A sacred blade that deals +2d10 radiant to fiends and undead.', effect: '+2d10 radiant vs evil', value: 28000 },
+];
+
+export function generateLoot(level: number, count: number = 1): Artifact[] {
+  const pool = getRarityPool(level);
+  const available = LOOT_TABLE.filter(l => pool.includes(l.rarity));
+  const results: Artifact[] = [];
+  for (let i = 0; i < count; i++) {
+    const item = available[Math.floor(Math.random() * available.length)];
+    if (item) {
+      results.push({ ...item, id: crypto.randomUUID() });
+    }
+  }
+  return results;
 }
 
 export interface GroupPatron {
