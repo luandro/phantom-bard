@@ -22,20 +22,31 @@ function generatePartyCode(): string {
 
 /**
  * Type guard that validates whether an unknown value conforms to the {@link GameState} interface.
- * Checks for required fields: campaignName, campaignLevel, party, storyLog, currentTurn,
+ * Checks for required fields: campaignName, campaignLevel, party (as Character[]), storyLog, currentTurn,
  * isInCombat, and gameStarted.
  * @param data - The value to validate
  * @returns True if the data is a valid GameState
  */
 const STORY_ENTRY_TYPES = new Set<string>(['narration', 'player', 'system', 'dice', 'puzzle']);
 
-function isValidPartyPlayer(el: unknown): el is PartyPlayer {
+function isValidCharacter(el: unknown): el is Character {
   if (typeof el !== 'object' || el === null) return false;
-  const p = el as Record<string, unknown>;
+  const c = el as Record<string, unknown>;
   return (
-    typeof p.id === 'string' &&
-    typeof p.name === 'string' &&
-    typeof p.isHost === 'boolean'
+    typeof c.id === 'string' &&
+    typeof c.name === 'string' &&
+    typeof c.race === 'string' &&
+    typeof c.class === 'string' &&
+    typeof c.level === 'number' &&
+    typeof c.hp === 'number' &&
+    typeof c.maxHp === 'number' &&
+    typeof c.stats === 'object' && c.stats !== null &&
+    typeof (c.stats as Record<string, unknown>).STR === 'number' &&
+    typeof (c.stats as Record<string, unknown>).DEX === 'number' &&
+    typeof (c.stats as Record<string, unknown>).CON === 'number' &&
+    typeof (c.stats as Record<string, unknown>).INT === 'number' &&
+    typeof (c.stats as Record<string, unknown>).WIS === 'number' &&
+    typeof (c.stats as Record<string, unknown>).CHA === 'number'
   );
 }
 
@@ -62,7 +73,7 @@ function isValidGameState(data: unknown): data is GameState {
     typeof d.currentTurn === 'number' &&
     typeof d.isInCombat === 'boolean' &&
     typeof d.gameStarted === 'boolean' &&
-    (d.party as unknown[]).every(isValidPartyPlayer) &&
+    (d.party as unknown[]).every(isValidCharacter) &&
     (d.storyLog as unknown[]).every(isValidStoryEntry)
   );
 }
