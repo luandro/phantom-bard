@@ -164,6 +164,15 @@ export function MultiplayerLobby({ onProceed }: MultiplayerLobbyProps) {
     setJoinError('Connection timed out. Please try again.');
   }
 
+  function handleBackClick() {
+    setView('select');
+    setJoinError('');
+    setJoinCode('');
+    setIsJoining(false);
+    if (joinTimeoutRef.current) { clearTimeout(joinTimeoutRef.current); joinTimeoutRef.current = null; }
+    if (secondaryTimeoutRef.current) { clearTimeout(secondaryTimeoutRef.current); secondaryTimeoutRef.current = null; }
+  }
+
   // ── Waiting screen (non-host joined, game not started yet) ─────────────────
   if (view === 'waiting' && !isPartyHost) {
     return (
@@ -356,7 +365,7 @@ export function MultiplayerLobby({ onProceed }: MultiplayerLobbyProps) {
               Join Party
             </button>
             <button
-              onClick={() => { setView('select'); setJoinError(''); setJoinCode(''); setIsJoining(false); if (joinTimeoutRef.current) { clearTimeout(joinTimeoutRef.current); joinTimeoutRef.current = null; } if (secondaryTimeoutRef.current) { clearTimeout(secondaryTimeoutRef.current); secondaryTimeoutRef.current = null; } }}
+              onClick={handleBackClick}
               className="w-full py-2 rounded-xl text-muted-foreground hover:text-foreground text-sm transition-colors"
             >
               ← Back
