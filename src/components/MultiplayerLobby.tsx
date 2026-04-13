@@ -31,6 +31,9 @@ export function MultiplayerLobby({ onProceed }: MultiplayerLobbyProps) {
   const codeInputRef = useRef<HTMLInputElement>(null);
   const joinTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const secondaryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Ref for isPartyConnected to avoid stale closure in timeout callbacks
+  const isPartyConnectedRef = useRef(isPartyConnected);
+  isPartyConnectedRef.current = isPartyConnected;
 
   // ── Handlers ──────────────────────────────────────────────────────────────
 
@@ -52,7 +55,7 @@ export function MultiplayerLobby({ onProceed }: MultiplayerLobbyProps) {
     // Timeout fallback: if not connected after 5s, revert to join view with error
     if (joinTimeoutRef.current) clearTimeout(joinTimeoutRef.current);
     joinTimeoutRef.current = setTimeout(() => {
-      if (!isPartyConnected) {
+      if (!isPartyConnectedRef.current) {
         setIsJoining(false);
         setView('joining');
         setJoinError('Could not connect to party. Please check the code and try again.');
@@ -62,7 +65,7 @@ export function MultiplayerLobby({ onProceed }: MultiplayerLobbyProps) {
     // Secondary fallback: if still on waiting screen after 10s, show error
     if (secondaryTimeoutRef.current) clearTimeout(secondaryTimeoutRef.current);
     secondaryTimeoutRef.current = setTimeout(() => {
-      if (!isPartyConnected) {
+      if (!isPartyConnectedRef.current) {
         setTimeoutError(true);
       }
     }, 10000);
