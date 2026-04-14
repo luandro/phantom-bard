@@ -162,6 +162,8 @@ export interface SubclassAbility {
   description: string;
 }
 
+export type { PartyPlayer } from './party-types';
+
 // ─── Custom Lineage System ───
 
 export const CUSTOM_LINEAGE_FEATS = [
