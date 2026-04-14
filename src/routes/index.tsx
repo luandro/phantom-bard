@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { GameProvider, useGame } from "@/hooks/use-game";
 import { GameSetup } from "@/components/GameSetup";
 import { GameScreen } from "@/components/GameScreen";
@@ -39,19 +39,21 @@ function Index() {
 function GameRouter({ pastLobby, setPastLobby }: { pastLobby: boolean; setPastLobby: (v: boolean) => void }) {
   const { state, isPartyHost, partyCode } = useGame();
 
-  // Reset pastLobby when game is reset or party is left, so the lobby
-  // is shown again on the next visit instead of skipping to GameSetup.
   const prevGameStarted = useRef(state.gameStarted);
   const prevPartyCode = useRef(partyCode);
 
-  if (!state.gameStarted && prevGameStarted.current) {
-    setPastLobby(false);
-  }
-  if (!partyCode && prevPartyCode.current) {
-    setPastLobby(false);
-  }
-  prevGameStarted.current = state.gameStarted;
-  prevPartyCode.current = partyCode;
+  useEffect(() => {
+    // Reset pastLobby when game is reset or party is left, so the lobby
+    // is shown again on the next visit instead of skipping to GameSetup.
+    if (!state.gameStarted && prevGameStarted.current) {
+      setPastLobby(false);
+    }
+    if (!partyCode && prevPartyCode.current) {
+      setPastLobby(false);
+    }
+    prevGameStarted.current = state.gameStarted;
+    prevPartyCode.current = partyCode;
+  }, [state.gameStarted, partyCode, setPastLobby]);
 
   if (state.gameStarted) return <GameScreen />;
 

@@ -27,7 +27,7 @@ function generatePartyCode(): string {
  * @param data - The value to validate
  * @returns True if the data is a valid GameState
  */
-const STORY_ENTRY_TYPES = new Set<string>(['narration', 'player', 'system', 'dice', 'puzzle']);
+const STORY_ENTRY_TYPES = new Set<string>(['narration', 'player', 'system', 'dice', 'puzzle', 'loot']);
 
 function isValidCharacter(el: unknown): el is Character {
   if (typeof el !== 'object' || el === null) return false;
