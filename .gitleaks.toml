@@ -1,0 +1,18 @@
+title = "Phantom Bard Gitleaks Config"
+
+[extend]
+# Use the default ruleset as a base
+useDefault = true
+
+[[rules]]
+id = "supabase-anon-key"
+description = "Supabase anon/public key"
+regex = '''eyJ[a-zA-Z0-9]{100,}\.eyJ[a-zA-Z0-9_-]+'''
+tags = ["key", "supabase"]
+
+[allowlist]
+paths = [
+  '''.env.example''',
+  '''\.husky/''',
+  '''.gitleaks.toml''',
+]

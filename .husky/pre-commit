@@ -1,0 +1,4 @@
+# Run gitleaks to detect secrets
+gitleaks protect --verbose --staged
+# Run lint-staged for code quality
+bunx lint-staged
