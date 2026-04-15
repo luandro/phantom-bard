@@ -232,32 +232,15 @@ phantom-bard/
 
 ## Deployment
 
-### Frontend (Cloudflare Workers)
+**For detailed step-by-step deployment instructions, see [DEPLOY.md](./DEPLOY.md).**
 
-The app is configured for Cloudflare Workers via Wrangler:
+Quick summary:
 
-```bash
-npm run build
-npx wrangler deploy
-```
-
-### Multiplayer Server (PartyKit)
-
-```bash
-npm run party:deploy
-```
-
-Set `VITE_PARTYKIT_HOST` in your production environment to the deployed PartyKit URL.
-
-### AI DM (Supabase)
-
-Deploy the edge function:
-
-```bash
-supabase functions deploy dm-chat
-```
-
-Ensure your Supabase project has the required LLM API key secret set.
+| What | Command |
+|---|---|
+| Frontend (Cloudflare Workers) | `npm run build && npx wrangler deploy` |
+| Multiplayer (PartyKit) | `npm run party:deploy` |
+| AI DM (Supabase) | `supabase functions deploy dm-chat` |
 
 ---
 
