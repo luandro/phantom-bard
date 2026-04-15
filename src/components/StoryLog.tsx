@@ -2,6 +2,7 @@ import { useRef, useEffect, useState, useCallback } from 'react';
 import { useGame } from '@/hooks/use-game';
 import { motion } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
+import { InteractiveDice } from '@/components/InteractiveDice';
 import { BookOpen, User, Dice6, Info, Volume2, VolumeX, Loader2, Gift } from 'lucide-react';
 
 declare global {
@@ -169,6 +170,9 @@ export function StoryLog() {
           )}
         </motion.div>
       ))}
+
+      {/* Interactive dice prompt */}
+      <InteractiveDice />
 
       {isLoading && (
         <motion.div

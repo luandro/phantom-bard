@@ -613,7 +613,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
       state, isLoading,
       startCampaign, addStoryEntry, updateCharacter, performDiceRoll, sendPlayerAction, resetGame,
       matchedCampaign,
-      addLoot, assignLoot,
+      addLoot, assignLoot, resolvePendingRoll,
       partyCode, partyPlayers, isPartyHost, isPartyConnected, playerName,
       createParty, joinParty, leaveParty,
     }}>
