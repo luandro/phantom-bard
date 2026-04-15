@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef, createContext, useContext, type ReactNode } from 'react';
 import PartySocket from 'partysocket';
-import { type GameState, type Character, type StoryEntry, type DiceRoll, type Artifact, type PartyPlayer, PREBUILT_CAMPAIGNS, type Campaign, type GroupPatron, generateLoot } from '@/lib/types';
+import { type GameState, type Character, type StoryEntry, type DiceRoll, type Artifact, type PartyPlayer, type PendingRoll, PREBUILT_CAMPAIGNS, type Campaign, type GroupPatron, generateLoot } from '@/lib/types';
 import { createDefaultGameState, loadGameState, saveGameState, clearGameState, createStoryEntry, rollDice, createCharacter } from '@/lib/game-store';
 
 // ─── Party code generator ───────────────────────────────────────────────────
@@ -95,6 +95,7 @@ interface GameContextType {
   matchedCampaign: Campaign | null;
   addLoot: (loot: Artifact[]) => void;
   assignLoot: (artifactId: string, characterId: string) => void;
+  resolvePendingRoll: () => DiceRoll | null;
   // Multiplayer / party
   partyCode: string | null;
   partyPlayers: PartyPlayer[];
@@ -316,19 +317,63 @@ export function GameProvider({ children }: { children: ReactNode }) {
 
       const cleanResponse = response.replace(/\[HP:[^\]]+\]/g, '').replace(/\[LOOT:\d+\]/g, '').trim();
 
-      setState(prev => ({
-        ...prev,
-        storyLog: [
-          ...prev.storyLog,
-          createStoryEntry('narration', cleanResponse),
-          ...(droppedLoot.length > 0 ? [{
-            ...createStoryEntry('loot', `The party found ${droppedLoot.length} item${droppedLoot.length > 1 ? 's' : ''}!`),
-            lootData: droppedLoot,
-          }] : []),
-        ],
-        lootInventory: [...prev.lootInventory, ...droppedLoot],
-        currentTurn: prev.currentTurn + 1,
-      }));
+      // Check for [ROLL:dX+mod] tags — if found, pause and show interactive dice
+      const rollMatch = cleanResponse.match(/\[ROLL:(d(\d+))([+-]\d+)?\]/);
+      if (rollMatch) {
+        const beforeRoll = cleanResponse.substring(0, rollMatch.index).trim();
+        const afterRoll = cleanResponse.substring((rollMatch.index ?? 0) + rollMatch[0].length).trim();
+        const diceType = rollMatch[1]; // e.g. "d20"
+        const sides = parseInt(rollMatch[2]);
+        const modifier = rollMatch[3] ? parseInt(rollMatch[3]) : 0;
+
+        // Add narration up to the roll point
+        if (beforeRoll) {
+          setState(prev => ({
+            ...prev,
+            storyLog: [...prev.storyLog, createStoryEntry('narration', beforeRoll)],
+          }));
+        }
+
+        // Set pending roll
+        setState(prev => ({
+          ...prev,
+          pendingRoll: {
+            diceType,
+            sides,
+            modifier,
+            reason: `The DM calls for a ${diceType} roll!`,
+            characterName: activeChar?.name,
+            remainingResponse: afterRoll,
+            fullResponse: cleanResponse,
+          },
+          lootInventory: [...prev.lootInventory, ...droppedLoot],
+        }));
+
+        // Add loot entries if any
+        if (droppedLoot.length > 0) {
+          setState(prev => ({
+            ...prev,
+            storyLog: [...prev.storyLog, {
+              ...createStoryEntry('loot', `The party found ${droppedLoot.length} item${droppedLoot.length > 1 ? 's' : ''}!`),
+              lootData: droppedLoot,
+            }],
+          }));
+        }
+      } else {
+        setState(prev => ({
+          ...prev,
+          storyLog: [
+            ...prev.storyLog,
+            createStoryEntry('narration', cleanResponse),
+            ...(droppedLoot.length > 0 ? [{
+              ...createStoryEntry('loot', `The party found ${droppedLoot.length} item${droppedLoot.length > 1 ? 's' : ''}!`),
+              lootData: droppedLoot,
+            }] : []),
+          ],
+          lootInventory: [...prev.lootInventory, ...droppedLoot],
+          currentTurn: prev.currentTurn + 1,
+        }));
+      }
     } catch (e) {
       console.error('AI DM error:', e);
       addStoryEntry(createStoryEntry('system', 'The Dungeon Master pauses... (AI temporarily unavailable, try again)'));
@@ -359,6 +404,36 @@ export function GameProvider({ children }: { children: ReactNode }) {
       }),
     }));
   }, []);
+
+  const resolvePendingRoll = useCallback((): DiceRoll | null => {
+    const pending = state.pendingRoll;
+    if (!pending) return null;
+
+    const roll = rollDice(pending.sides, pending.modifier);
+    const label = roll.isCriticalSuccess ? '🎯 CRITICAL SUCCESS!' : roll.isCriticalFail ? '💀 CRITICAL FAIL!' : '';
+    
+    addStoryEntry(createStoryEntry('dice', `${pending.characterName ?? 'Player'} rolled ${roll.type}: ${roll.result}${pending.modifier !== 0 ? ` (${pending.modifier >= 0 ? '+' : ''}${pending.modifier}) = ${roll.total}` : ''} ${label}`));
+
+    // Add remaining narration after the roll
+    if (pending.remainingResponse) {
+      const remaining = pending.remainingResponse.replace(/\[ROLL:[^\]]+\]/g, '').trim();
+      if (remaining) {
+        setState(prev => ({
+          ...prev,
+          storyLog: [...prev.storyLog, createStoryEntry('narration', remaining)],
+        }));
+      }
+    }
+
+    // Clear pending roll and advance turn
+    setState(prev => ({
+      ...prev,
+      pendingRoll: null,
+      currentTurn: prev.currentTurn + 1,
+    }));
+
+    return roll;
+  }, [state.pendingRoll, addStoryEntry]);
 
   const resetGame = useCallback(() => {
     clearGameState();
@@ -538,7 +613,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
       state, isLoading,
       startCampaign, addStoryEntry, updateCharacter, performDiceRoll, sendPlayerAction, resetGame,
       matchedCampaign,
-      addLoot, assignLoot,
+      addLoot, assignLoot, resolvePendingRoll,
       partyCode, partyPlayers, isPartyHost, isPartyConnected, playerName,
       createParty, joinParty, leaveParty,
     }}>
