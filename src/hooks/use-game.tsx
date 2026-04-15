@@ -90,7 +90,7 @@ interface GameContextType {
   addStoryEntry: (entry: StoryEntry) => void;
   updateCharacter: (id: string, updates: Partial<Character>) => void;
   performDiceRoll: (sides: number, modifier?: number) => DiceRoll;
-  sendPlayerAction: (action: string) => Promise<void>;
+  sendPlayerAction: (action: string, overrideCharacterName?: string) => Promise<void>;
   resetGame: () => void;
   matchedCampaign: Campaign | null;
   addLoot: (loot: Artifact[]) => void;
@@ -265,6 +265,10 @@ export function GameProvider({ children }: { children: ReactNode }) {
       lootInventory: [],
     });
 
+    // Set isLoadingRef immediately to prevent remote_action race during
+    // the 500ms setTimeout gap before sendInitialScene runs.
+    isLoadingRef.current = true;
+
     setTimeout(() => {
       sendInitialScene(name, level, party, matched ?? null, patron);
     }, 500);
@@ -297,11 +301,14 @@ export function GameProvider({ children }: { children: ReactNode }) {
       }));
     } finally {
       setIsLoading(false);
-      isLoadingRef.current = false;
-      // Drain any remote actions that were queued during initial scene generation
+      // Drain any remote actions that were queued during initial scene generation.
+      // Keep isLoadingRef = true until drain completes to prevent race with
+      // incoming remote_action messages that see isLoadingRef === false.
       const next = pendingRemoteActionsRef.current.shift();
       if (next && sendPlayerActionRef.current) {
         sendPlayerActionRef.current(next.action, next.playerName);
+      } else {
+        isLoadingRef.current = false;
       }
     }
   };
@@ -316,9 +323,10 @@ export function GameProvider({ children }: { children: ReactNode }) {
     }
 
     const activeChar = state.party[state.currentTurn % state.party.length];
-    addStoryEntry(createStoryEntry('player', action, overrideCharacterName ?? activeChar?.name));
+    // Add story entry after setting loading state so it doesn't appear orphaned on error
     setIsLoading(true);
     isLoadingRef.current = true;
+    addStoryEntry(createStoryEntry('player', action, overrideCharacterName ?? activeChar?.name));
 
     try {
       const recentLog = state.storyLog.slice(-10).map(e => {
@@ -360,13 +368,12 @@ export function GameProvider({ children }: { children: ReactNode }) {
         });
       }
 
-      // Parse loot drops
+      // Parse loot drops — collect counts, generate loot inside setState updater
+      // to read latest campaignLevel instead of stale closure value.
       const lootMatches = response.matchAll(/\[LOOT:(\d+)\]/g);
-      let droppedLoot: Artifact[] = [];
+      const lootCounts: number[] = [];
       for (const match of lootMatches) {
-        const count = Math.min(parseInt(match[1]), 5);
-        const loot = generateLoot(state.campaignLevel, count);
-        droppedLoot = [...droppedLoot, ...loot];
+        lootCounts.push(Math.min(parseInt(match[1]), 5));
       }
 
       const cleanResponse = response.replace(/\[HP:[^\]]+\]/g, '').replace(/\[LOOT:\d+\]/g, '').trim();
@@ -388,45 +395,58 @@ export function GameProvider({ children }: { children: ReactNode }) {
           }));
         }
 
-        // Set pending roll
-        setState(prev => ({
-          ...prev,
-          pendingRoll: {
-            diceType,
-            sides,
-            modifier,
-            reason: `The DM calls for a ${diceType} roll!`,
-            characterName: activeChar?.name,
-            remainingResponse: afterRoll,
-            fullResponse: cleanResponse,
-          },
-          lootInventory: [...prev.lootInventory, ...droppedLoot],
-        }));
-
-        // Add loot entries if any
-        if (droppedLoot.length > 0) {
-          setState(prev => ({
+        // Generate loot with latest campaignLevel and set pending roll
+        setState(prev => {
+          const actualLoot = lootCounts.flatMap(count => generateLoot(prev.campaignLevel, count));
+          return {
             ...prev,
-            storyLog: [...prev.storyLog, {
-              ...createStoryEntry('loot', `The party found ${droppedLoot.length} item${droppedLoot.length > 1 ? 's' : ''}!`),
-              lootData: droppedLoot,
-            }],
-          }));
+            pendingRoll: {
+              diceType,
+              sides,
+              modifier,
+              reason: `The DM calls for a ${diceType} roll!`,
+              characterName: activeChar?.name,
+              remainingResponse: afterRoll,
+              fullResponse: cleanResponse,
+            },
+            lootInventory: [...prev.lootInventory, ...actualLoot],
+          };
+        });
+
+        // Add loot entries if any — need to compute loot again for the story entry
+        if (lootCounts.length > 0) {
+          setState(prev => {
+            const actualLoot = lootCounts.flatMap(count => generateLoot(prev.campaignLevel, count));
+            if (actualLoot.length > 0) {
+              return {
+                ...prev,
+                storyLog: [...prev.storyLog, {
+                  ...createStoryEntry('loot', `The party found ${actualLoot.length} item${actualLoot.length > 1 ? 's' : ''}!`),
+                  lootData: actualLoot,
+                }],
+              };
+            }
+            return prev;
+          });
         }
       } else {
-        setState(prev => ({
-          ...prev,
-          storyLog: [
-            ...prev.storyLog,
-            createStoryEntry('narration', cleanResponse),
-            ...(droppedLoot.length > 0 ? [{
-              ...createStoryEntry('loot', `The party found ${droppedLoot.length} item${droppedLoot.length > 1 ? 's' : ''}!`),
-              lootData: droppedLoot,
-            }] : []),
-          ],
-          lootInventory: [...prev.lootInventory, ...droppedLoot],
-          currentTurn: prev.currentTurn + 1,
-        }));
+        // No roll — add narration and loot in one setState with latest campaignLevel
+        setState(prev => {
+          const actualLoot = lootCounts.flatMap(count => generateLoot(prev.campaignLevel, count));
+          return {
+            ...prev,
+            storyLog: [
+              ...prev.storyLog,
+              createStoryEntry('narration', cleanResponse),
+              ...(actualLoot.length > 0 ? [{
+                ...createStoryEntry('loot', `The party found ${actualLoot.length} item${actualLoot.length > 1 ? 's' : ''}!`),
+                lootData: actualLoot,
+              }] : []),
+            ],
+            lootInventory: [...prev.lootInventory, ...actualLoot],
+            currentTurn: prev.currentTurn + 1,
+          };
+        });
       }
     } catch (e) {
       console.error('AI DM error:', e);
@@ -445,7 +465,11 @@ export function GameProvider({ children }: { children: ReactNode }) {
     }
   }, [state, addStoryEntry, updateCharacter, matchedCampaign]);
 
-  sendPlayerActionRef.current = sendPlayerAction;
+  // Keep ref in sync with callback inside useEffect to avoid assigning
+  // during render body (prevents stale closure in concurrent mode).
+  useEffect(() => {
+    sendPlayerActionRef.current = sendPlayerAction;
+  });
 
   const addLoot = useCallback((loot: Artifact[]) => {
     setState(prev => ({

@@ -198,7 +198,15 @@ export default class GameRoom implements Party.Server {
         return;
       }
 
-      const hostConn = this.room.getConnection(state.hostId ?? '');
+      if (!state.hostId) {
+        sender.send(JSON.stringify({
+          type: 'error',
+          message: 'Host is not connected',
+        }));
+        return;
+      }
+
+      const hostConn = this.room.getConnection(state.hostId);
       if (!hostConn) {
         sender.send(JSON.stringify({
           type: 'error',

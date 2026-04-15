@@ -786,4 +786,106 @@ describe('useGame — Non-host action relay', () => {
       expect(playerEntries.length).toBeGreaterThan(0);
     });
   });
+
+  describe('action queue cap enforcement', () => {
+    it('should cap the remote action queue at 5 items', async () => {
+      const { result } = renderGameHook();
+
+      // Create party as host with game state
+      act(() => {
+        result.current.createParty('HostPlayer');
+      });
+
+      act(() => {
+        const openHandler = mockPartySocketInstance.addEventListener.mock.calls.find(
+          (call: any[]) => call[0] === 'open'
+        )?.[1];
+        if (openHandler) openHandler();
+      });
+
+      act(() => {
+        const msgHandler = mockPartySocketInstance.addEventListener.mock.calls.find(
+          (call: any[]) => call[0] === 'message'
+        )?.[1];
+        if (msgHandler) {
+          msgHandler({
+            data: JSON.stringify({
+              type: 'sync',
+              players: [
+                { id: 'mock-socket-id', name: 'HostPlayer', isHost: true },
+              ],
+              gameState: {
+                campaignName: 'Test',
+                campaignLevel: 1,
+                party: [{
+                  id: 'char-1', name: 'Thorin', race: 'Dwarf', class: 'Fighter',
+                  subclass: 'Champion', level: 1, hp: 12, maxHp: 12,
+                  stats: { STR: 16, DEX: 12, CON: 14, INT: 10, WIS: 10, CHA: 8 },
+                  inventory: [], spells: [],
+                }],
+                storyLog: [],
+                currentTurn: 0,
+                isInCombat: false,
+                gameStarted: true,
+                lootInventory: [],
+              },
+              version: 1,
+            }),
+          });
+        }
+      });
+
+      // Make fetch hang (simulating a long AI DM call)
+      let resolveFirstFetch: (value: any) => void;
+      mockFetch.mockReturnValue(new Promise(r => { resolveFirstFetch = r; }));
+      mockFetch.mockClear();
+
+      // Start processing a host action
+      act(() => {
+        result.current.sendPlayerAction('I attack!');
+      });
+
+      await waitFor(() => {
+        expect(mockFetch).toHaveBeenCalledTimes(1);
+      });
+
+      // Send 7 remote actions while host is busy
+      const msgHandler = mockPartySocketInstance.addEventListener.mock.calls.find(
+        (call: any[]) => call[0] === 'message'
+      )?.[1];
+      for (let i = 0; i < 7; i++) {
+        act(() => {
+          if (msgHandler) {
+            msgHandler({
+              data: JSON.stringify({
+                type: 'remote_action',
+                action: `Remote action ${i}`,
+                playerName: `Player${i}`,
+                playerId: `player-${i}`,
+              }),
+            });
+          }
+        });
+      }
+
+      // Resolve the first fetch
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ content: 'The DM responds...' }),
+      });
+      await act(async () => {
+        resolveFirstFetch!({
+          ok: true,
+          json: () => Promise.resolve({ content: 'The DM responds...' }),
+        });
+      });
+
+      // After resolving, we expect: the first action + 5 queued (cap) = 6 total fetch calls
+      // The 6th and 7th remote actions should have been dropped
+      await waitFor(() => {
+        // First call is the host's own action, then 5 more from the queue
+        expect(mockFetch).toHaveBeenCalledTimes(6);
+      });
+    });
+  });
 });
