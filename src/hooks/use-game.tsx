@@ -405,6 +405,36 @@ export function GameProvider({ children }: { children: ReactNode }) {
     }));
   }, []);
 
+  const resolvePendingRoll = useCallback((): DiceRoll | null => {
+    const pending = state.pendingRoll;
+    if (!pending) return null;
+
+    const roll = rollDice(pending.sides, pending.modifier);
+    const label = roll.isCriticalSuccess ? '🎯 CRITICAL SUCCESS!' : roll.isCriticalFail ? '💀 CRITICAL FAIL!' : '';
+    
+    addStoryEntry(createStoryEntry('dice', `${pending.characterName ?? 'Player'} rolled ${roll.type}: ${roll.result}${pending.modifier !== 0 ? ` (${pending.modifier >= 0 ? '+' : ''}${pending.modifier}) = ${roll.total}` : ''} ${label}`));
+
+    // Add remaining narration after the roll
+    if (pending.remainingResponse) {
+      const remaining = pending.remainingResponse.replace(/\[ROLL:[^\]]+\]/g, '').trim();
+      if (remaining) {
+        setState(prev => ({
+          ...prev,
+          storyLog: [...prev.storyLog, createStoryEntry('narration', remaining)],
+        }));
+      }
+    }
+
+    // Clear pending roll and advance turn
+    setState(prev => ({
+      ...prev,
+      pendingRoll: null,
+      currentTurn: prev.currentTurn + 1,
+    }));
+
+    return roll;
+  }, [state.pendingRoll, addStoryEntry]);
+
   const resetGame = useCallback(() => {
     clearGameState();
     setState(createDefaultGameState());
