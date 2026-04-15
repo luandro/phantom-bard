@@ -4,12 +4,13 @@ import { SpellCastModal } from '@/components/SpellCastModal';
 import { Send, Sword, Sparkles, Search, MessageCircle, Package } from 'lucide-react';
 
 export function ActionBar() {
-  const { sendPlayerAction, isLoading } = useGame();
+  const { sendPlayerAction, isLoading, isWaitingForHost } = useGame();
   const [input, setInput] = useState('');
   const [spellModalOpen, setSpellModalOpen] = useState(false);
+  const actionDisabled = isLoading || isWaitingForHost;
 
   const handleSend = () => {
-    if (!input.trim() || isLoading) return;
+    if (!input.trim() || actionDisabled) return;
     sendPlayerAction(input.trim());
     setInput('');
   };
@@ -48,7 +49,7 @@ export function ActionBar() {
             <button
               key={qa.label}
               onClick={() => handleQuickAction(qa.action)}
-              disabled={isLoading}
+              disabled={actionDisabled}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-secondary text-secondary-foreground rounded-full text-xs font-display whitespace-nowrap hover:bg-accent transition-colors disabled:opacity-40 shrink-0"
             >
               <qa.icon className="w-3 h-3" />
@@ -63,13 +64,13 @@ export function ActionBar() {
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && handleSend()}
-            placeholder="What do you do?"
-            disabled={isLoading}
+            placeholder={isWaitingForHost ? 'Waiting for host to process...' : 'What do you do?'}
+            disabled={actionDisabled}
             className="flex-1 bg-input border border-border rounded-lg px-4 py-2.5 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-gold/50 disabled:opacity-50"
           />
           <button
             onClick={handleSend}
-            disabled={!input.trim() || isLoading}
+            disabled={!input.trim() || actionDisabled}
             className="bg-primary text-primary-foreground px-4 rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <Send className="w-4 h-4" />

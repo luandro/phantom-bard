@@ -105,6 +105,7 @@ interface GameContextType {
   createParty: (name: string) => string;
   joinParty: (code: string, name: string) => void;
   leaveParty: () => void;
+  isWaitingForHost: boolean;
 }
 
 const GameContext = createContext<GameContextType | null>(null);
@@ -160,6 +161,14 @@ export function GameProvider({ children }: { children: ReactNode }) {
   // Ref for latest state to avoid stale closure in debounced broadcast
   const latestStateRef = useRef(state);
   latestStateRef.current = state;
+
+  // Non-host action relay refs and state
+  const isWaitingForHostRef = useRef(false);
+  const [isWaitingForHost, setIsWaitingForHost] = useState(false);
+  const pendingRemoteActionsRef = useRef<{ action: string; playerName: string }[]>([]);
+  const sendPlayerActionRef = useRef<((action: string, overrideCharacterName?: string) => Promise<void>) | null>(null);
+  // Ref for isLoading to avoid stale closure in socket message handler
+  const isLoadingRef = useRef(false);
 
   // ── Persist to localStorage ────────────────────────────────────────────────
   useEffect(() => { saveGameState(state); }, [state]);
@@ -246,6 +255,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
 
   const sendInitialScene = async (name: string, level: number, party: Character[], campaign: Campaign | null, patron?: GroupPatron) => {
     setIsLoading(true);
+    isLoadingRef.current = true;
     try {
       const partyDesc = party.map(c => `${c.name} (Level ${c.level} ${c.race} ${c.class}, HP: ${c.hp}/${c.maxHp})`).join(', ');
       const campaignContext = campaign
@@ -269,13 +279,28 @@ export function GameProvider({ children }: { children: ReactNode }) {
       }));
     } finally {
       setIsLoading(false);
+      isLoadingRef.current = false;
+      // Drain any remote actions that were queued during initial scene generation
+      const next = pendingRemoteActionsRef.current.shift();
+      if (next && sendPlayerActionRef.current) {
+        sendPlayerActionRef.current(next.action, next.playerName);
+      }
     }
   };
 
-  const sendPlayerAction = useCallback(async (action: string) => {
+  const sendPlayerAction = useCallback(async (action: string, overrideCharacterName?: string) => {
+    // Non-host: relay action to host via PartyKit
+    if (isPartyHostRef.current === false && isPartyConnectedRef.current && partyCodeRef.current) {
+      partySocketRef.current?.send(JSON.stringify({ type: 'player_action', action }));
+      setIsWaitingForHost(true);
+      isWaitingForHostRef.current = true;
+      return;
+    }
+
     const activeChar = state.party[state.currentTurn % state.party.length];
-    addStoryEntry(createStoryEntry('player', action, activeChar?.name));
+    addStoryEntry(createStoryEntry('player', action, overrideCharacterName ?? activeChar?.name));
     setIsLoading(true);
+    isLoadingRef.current = true;
 
     try {
       const recentLog = state.storyLog.slice(-10).map(e => {
@@ -293,17 +318,28 @@ export function GameProvider({ children }: { children: ReactNode }) {
 
       const response = await callAIDM([
         { role: 'system', content: `You are a D&D Dungeon Master. ${campaignCtx}${patronCtx} Party: ${partyDesc}. Rules: 1) Request dice rolls for uncertain outcomes using [ROLL:d20+modifier] format. 2) Adapt difficulty to party level ${state.campaignLevel}. 3) Be descriptive and immersive. 4) Present clear choices. 5) If combat starts, describe enemy positions. 6) Track HP changes with [HP:characterName:-amount] or [HP:characterName:+amount]. 7) Never resolve uncertain outcomes without dice. 8) Occasionally introduce puzzles (riddles, logic challenges, ciphers) that players must solve. 9) Reference subclass abilities when characters use class features. 10) If the party has a patron, weave their influence into the story. 11) After combat victories, treasure discoveries, or quest completions, award loot using [LOOT:count] format where count is number of items (e.g. [LOOT:2]). Make loot drops feel earned and exciting.` },
-        { role: 'user', content: `Recent events:\n${recentLog}\n\nPlayer action: ${activeChar?.name ?? 'Player'} says: "${action}"\n\nRespond as the DM. Keep to 2-3 paragraphs.` }
+        { role: 'user', content: `Recent events:\n${recentLog}\n\nPlayer action: ${overrideCharacterName ?? activeChar?.name ?? 'Player'} says: "${action}"\n\nRespond as the DM. Keep to 2-3 paragraphs.` }
       ]);
 
       const hpChanges = response.matchAll(/\[HP:([^:]+):([+-]\d+)\]/g);
       for (const match of hpChanges) {
         const charName = match[1];
         const amount = parseInt(match[2]);
-        const char = state.party.find(c => c.name.toLowerCase() === charName.toLowerCase());
-        if (char) {
-          updateCharacter(char.id, { hp: Math.max(0, Math.min(char.maxHp, char.hp + amount)) });
-        }
+        // Use setState updater to read latest party state, avoiding stale closure
+        setState(prev => {
+          const char = prev.party.find(c => c.name.toLowerCase() === charName.toLowerCase());
+          if (char) {
+            return {
+              ...prev,
+              party: prev.party.map(c =>
+                c.id === char.id
+                  ? { ...c, hp: Math.max(0, Math.min(c.maxHp, c.hp + amount)) }
+                  : c
+              ),
+            };
+          }
+          return prev;
+        });
       }
 
       // Parse loot drops
@@ -378,9 +414,20 @@ export function GameProvider({ children }: { children: ReactNode }) {
       console.error('AI DM error:', e);
       addStoryEntry(createStoryEntry('system', 'The Dungeon Master pauses... (AI temporarily unavailable, try again)'));
     } finally {
-      setIsLoading(false);
+      // Process next queued remote action (host only)
+      // Set isLoadingRef BEFORE draining to prevent race with incoming remote_action
+      const next = pendingRemoteActionsRef.current.shift();
+      if (next && sendPlayerActionRef.current) {
+        // isLoadingRef will be set to true inside sendPlayerAction
+        sendPlayerActionRef.current(next.action, next.playerName);
+      } else {
+        setIsLoading(false);
+        isLoadingRef.current = false;
+      }
     }
   }, [state, addStoryEntry, updateCharacter, matchedCampaign]);
+
+  sendPlayerActionRef.current = sendPlayerAction;
 
   const addLoot = useCallback((loot: Artifact[]) => {
     setState(prev => ({
@@ -470,6 +517,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
         version?: number;
         message?: string;
         hostSecret?: string;
+        action?: string;
+        playerName?: string;
       };
       try {
         data = JSON.parse(event.data) as {
@@ -482,6 +531,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
           version?: number;
           message?: string;
           hostSecret?: string;
+          action?: string;
+          playerName?: string;
         };
       } catch {
         console.warn('Received invalid JSON from party server');
@@ -526,6 +577,9 @@ export function GameProvider({ children }: { children: ReactNode }) {
         // Determine if we're host based on first player slot
         const me = data.players?.find(p => p.id === socket.id);
         if (me) setIsPartyHost(me.isHost);
+        // Clear waiting state on initial sync
+        setIsWaitingForHost(false);
+        isWaitingForHostRef.current = false;
 
       } else if (data.type === 'player_joined') {
         setPartyPlayers(data.players ?? []);
@@ -557,6 +611,19 @@ export function GameProvider({ children }: { children: ReactNode }) {
         } else {
           console.warn('Received invalid game state in game_sync, ignoring');
         }
+        // Clear waiting state on game_sync
+        setIsWaitingForHost(false);
+        isWaitingForHostRef.current = false;
+      } else if (data.type === 'remote_action' && typeof data.action === 'string') {
+        // Host receives remote action from non-host player
+        if (isLoadingRef.current) {
+          // Queue if already processing an action (cap at 5)
+          if (pendingRemoteActionsRef.current.length < 5) {
+            pendingRemoteActionsRef.current.push({ action: data.action, playerName: data.playerName ?? 'Unknown' });
+          }
+          return;
+        }
+        sendPlayerActionRef.current?.(data.action, data.playerName);
       }
     });
 
@@ -564,10 +631,14 @@ export function GameProvider({ children }: { children: ReactNode }) {
     socket.addEventListener('error', (event: Event) => {
       console.error('WebSocket error:', event);
       setIsPartyConnected(false);
+      setIsWaitingForHost(false);
+      isWaitingForHostRef.current = false;
     });
 
     socket.addEventListener('close', () => {
       setIsPartyConnected(false);
+      setIsWaitingForHost(false);
+      isWaitingForHostRef.current = false;
     });
 
     partySocketRef.current = socket;
@@ -601,6 +672,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
     setPartyPlayers([]);
     setPlayerName('');
     hostSecretRef.current = null;
+    setIsWaitingForHost(false);
+    isWaitingForHostRef.current = false;
   }, []);
 
   // Cleanup socket on unmount
@@ -616,6 +689,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
       addLoot, assignLoot, resolvePendingRoll,
       partyCode, partyPlayers, isPartyHost, isPartyConnected, playerName,
       createParty, joinParty, leaveParty,
+      isWaitingForHost,
     }}>
       {children}
     </GameContext.Provider>

@@ -46,9 +46,10 @@ export default class GameRoom implements Party.Server {
    * Supports:
    * - `hello`: Registers a player with intent validation (`create` or `join`).
    * - `game_update`: Updates game state (host-only, with stale version rejection).
+   * - `player_action`: Relays a non-host player action to the host as `remote_action`.
    */
   async onMessage(message: string, sender: Party.Connection) {
-    let data: { type: string; playerName?: string; intent?: 'create' | 'join'; gameState?: unknown; version?: number; hostSecret?: string };
+    let data: { type: string; playerName?: string; intent?: 'create' | 'join'; gameState?: unknown; version?: number; hostSecret?: string; action?: string };
     try {
       data = JSON.parse(message) as {
         type: string;
@@ -57,6 +58,7 @@ export default class GameRoom implements Party.Server {
         gameState?: unknown;
         version?: number;
         hostSecret?: string;
+        action?: string;
       };
     } catch {
       sender.send(JSON.stringify({ type: "error", message: "Invalid JSON" }));
@@ -177,6 +179,46 @@ export default class GameRoom implements Party.Server {
         }),
         [sender.id]
       );
+    } else if (data.type === 'player_action' && typeof data.action === 'string' && data.action.trim()) {
+      // Non-host players send actions to the host for processing
+      if (state.hostId && sender.id === state.hostId) {
+        sender.send(JSON.stringify({
+          type: 'error',
+          message: 'host should use game_update directly',
+        }));
+        return;
+      }
+
+      const senderPlayer = state.players.find((p) => p.id === sender.id);
+      if (!senderPlayer) {
+        sender.send(JSON.stringify({
+          type: 'error',
+          message: 'Player not found in room',
+        }));
+        return;
+      }
+
+      const hostConn = this.room.getConnection(state.hostId ?? '');
+      if (!hostConn) {
+        sender.send(JSON.stringify({
+          type: 'error',
+          message: 'Host is not connected',
+        }));
+        return;
+      }
+
+      hostConn.send(JSON.stringify({
+        type: 'remote_action',
+        action: data.action,
+        playerName: senderPlayer.name,
+        playerId: sender.id,
+      }));
+    } else if (data.type === 'player_action') {
+      // Covers missing action field, empty string, or whitespace-only
+      sender.send(JSON.stringify({
+        type: 'error',
+        message: 'Action cannot be empty',
+      }));
     }
   }
 
