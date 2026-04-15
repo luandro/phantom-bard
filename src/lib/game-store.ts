@@ -12,6 +12,7 @@ export function createDefaultGameState(): GameState {
     isInCombat: false,
     gameStarted: false,
     lootInventory: [],
+    pendingRoll: null,
   };
 }
 
