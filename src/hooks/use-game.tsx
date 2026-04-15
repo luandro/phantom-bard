@@ -131,9 +131,22 @@ export function useGame() {
  * debounced state broadcasting (host-only).
  */
 export function GameProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<GameState>(() => loadGameState() ?? createDefaultGameState());
+  // Initialize with default state to ensure server and client render
+  // identically during hydration. localStorage is loaded in a useEffect
+  // below to avoid hydration mismatches (SSR has no localStorage).
+  const [state, setState] = useState<GameState>(createDefaultGameState());
   const [isLoading, setIsLoading] = useState(false);
   const [matchedCampaign, setMatchedCampaign] = useState<Campaign | null>(null);
+
+  // Hydrate from localStorage after mount to avoid SSR/client mismatch
+  const [hasHydrated, setHasHydrated] = useState(false);
+  useEffect(() => {
+    const saved = loadGameState();
+    if (saved) {
+      setState(saved);
+    }
+    setHasHydrated(true);
+  }, []);
 
   // Party state
   const [partyCode, setPartyCode] = useState<string | null>(null);
@@ -171,7 +184,12 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const isLoadingRef = useRef(false);
 
   // ── Persist to localStorage ────────────────────────────────────────────────
-  useEffect(() => { saveGameState(state); }, [state]);
+  // Skip the first render before hydration to avoid overwriting saved state
+  // with the default empty game state.
+  useEffect(() => {
+    if (!hasHydrated) return;
+    saveGameState(state);
+  }, [state, hasHydrated]);
 
   // ── Broadcast state to party whenever it changes (host only) ───────────────
   // Task 11: 300ms debounce, Task 15: refs for stable values, Task 16: version
