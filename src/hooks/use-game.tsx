@@ -76,9 +76,21 @@ function isValidGameState(data: unknown): data is GameState {
     typeof d.currentTurn === 'number' &&
     typeof d.isInCombat === 'boolean' &&
     typeof d.gameStarted === 'boolean' &&
+    (d.lootInventory === undefined || Array.isArray(d.lootInventory)) &&
     (d.party as unknown[]).every(isValidCharacter) &&
     (d.storyLog as unknown[]).every(isValidStoryEntry)
   );
+}
+
+/**
+ * Normalizes a GameState that passed validation, filling in optional/missing
+ * fields with safe defaults. Handles old saves that predate `lootInventory`.
+ */
+function normalizeGameState(data: GameState): GameState {
+  return {
+    ...data,
+    lootInventory: data.lootInventory ?? [],
+  };
 }
 
 // ─── Context types ───────────────────────────────────────────────────────────
@@ -253,6 +265,11 @@ export function GameProvider({ children }: { children: ReactNode }) {
 
     const opening = matched ? matched.opening : `Your adventure "${name}" begins...`;
 
+    // Mark as loading immediately to prevent remote_action from racing
+    // with the delayed sendInitialScene call below.
+    setIsLoading(true);
+    isLoadingRef.current = true;
+
     setState({
       campaignName: name,
       campaignLevel: level,
@@ -276,8 +293,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const sendInitialScene = async (name: string, level: number, party: Character[], campaign: Campaign | null, patron?: GroupPatron) => {
-    setIsLoading(true);
-    isLoadingRef.current = true;
+    // isLoadingRef is already true, set by startCampaign before the setTimeout
     try {
       const partyDesc = party.map(c => `${c.name} (Level ${c.level} ${c.race} ${c.class}, HP: ${c.hp}/${c.maxHp})`).join(', ');
       const campaignContext = campaign
@@ -395,7 +411,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
           }));
         }
 
-        // Generate loot with latest campaignLevel and set pending roll
+        // Generate loot with latest campaignLevel, set pending roll, and add
+        // loot story entry — all in one setState to ensure consistent loot items.
         setState(prev => {
           const actualLoot = lootCounts.flatMap(count => generateLoot(prev.campaignLevel, count));
           return {
@@ -410,25 +427,14 @@ export function GameProvider({ children }: { children: ReactNode }) {
               fullResponse: cleanResponse,
             },
             lootInventory: [...prev.lootInventory, ...actualLoot],
-          };
-        });
-
-        // Add loot entries if any — need to compute loot again for the story entry
-        if (lootCounts.length > 0) {
-          setState(prev => {
-            const actualLoot = lootCounts.flatMap(count => generateLoot(prev.campaignLevel, count));
-            if (actualLoot.length > 0) {
-              return {
-                ...prev,
-                storyLog: [...prev.storyLog, {
+            storyLog: actualLoot.length > 0
+              ? [...prev.storyLog, {
                   ...createStoryEntry('loot', `The party found ${actualLoot.length} item${actualLoot.length > 1 ? 's' : ''}!`),
                   lootData: actualLoot,
-                }],
-              };
-            }
-            return prev;
-          });
-        }
+                }]
+              : prev.storyLog,
+          };
+        });
       } else {
         // No roll — add narration and loot in one setState with latest campaignLevel
         setState(prev => {
@@ -607,8 +613,9 @@ export function GameProvider({ children }: { children: ReactNode }) {
         setPartyPlayers(data.players ?? []);
         // Task 12: Validate game state before applying
         if (data.gameState && isValidGameState(data.gameState)) {
-          lastSyncedStateRef.current = JSON.stringify(data.gameState);
-          setState(data.gameState);
+          const normalized = normalizeGameState(data.gameState);
+          lastSyncedStateRef.current = JSON.stringify(normalized);
+          setState(normalized);
           // Task 16: Sync version from server
           if (typeof data.version === 'number') {
             stateVersionRef.current = data.version;
@@ -644,8 +651,9 @@ export function GameProvider({ children }: { children: ReactNode }) {
       } else if (data.type === 'game_sync' && data.gameState) {
         // Task 12: Validate game state before applying
         if (isValidGameState(data.gameState)) {
-          lastSyncedStateRef.current = JSON.stringify(data.gameState);
-          setState(data.gameState);
+          const normalized = normalizeGameState(data.gameState);
+          lastSyncedStateRef.current = JSON.stringify(normalized);
+          setState(normalized);
           // Task 16: Sync version from server
           if (typeof data.version === 'number') {
             stateVersionRef.current = data.version;
