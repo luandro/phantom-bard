@@ -67,6 +67,18 @@ export interface PuzzleData {
   solved: boolean;
 }
 
+export interface PendingRoll {
+  diceType: string;       // e.g. "d20"
+  sides: number;
+  modifier: number;
+  reason: string;         // e.g. "Roll for initiative"
+  characterName?: string;
+  /** The rest of the DM narration after the roll tag, to continue after resolving */
+  remainingResponse: string;
+  /** Full context needed to continue after roll */
+  fullResponse: string;
+}
+
 export interface GameState {
   campaignName: string;
   campaignLevel: number;
@@ -77,6 +89,7 @@ export interface GameState {
   gameStarted: boolean;
   groupPatron?: GroupPatron;
   lootInventory: Artifact[];
+  pendingRoll?: PendingRoll | null;
 }
 
 // ─── Loot Tables ───
