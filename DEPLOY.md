@@ -292,6 +292,62 @@ npx partykit login
 
 ---
 
+## Advanced: Deploy PartyKit to Your Own Cloudflare Account (Cloud-Prem)
+
+The steps above use PartyKit's **managed platform** (deployed to `*.partykit.dev`), which is the easiest option. If you need more control, you can deploy the multiplayer server directly to **your own Cloudflare account** instead. This is useful if you:
+
+- Have regulatory requirements that require using your own Cloudflare account
+- Want to use a domain already configured under Cloudflare
+- Want to use existing Cloudflare Workers and services alongside PartyKit
+
+### Get your Cloudflare credentials
+
+1. **Account ID** -- Go to [dash.cloudflare.com](https://dash.cloudflare.com), click your domain, and copy the **Account ID** from the overview page. You can also find it at [developers.cloudflare.com/fundamentals/setup/find-account-and-zone-ids](https://developers.cloudflare.com/fundamentals/setup/find-account-and-zone-ids).
+
+2. **API Token** -- Go to [dash.cloudflare.com/profile/api-tokens](https://dash.cloudflare.com/profile/api-tokens) and click **Create Token**. Use the **"Edit Cloudflare Workers"** template, then copy the generated token.
+
+### Configure the domain
+
+Add a `domain` field to `partykit.json`:
+
+```json
+{
+  "$schema": "https://www.partykit.io/schema.json",
+  "name": "phantom-bard",
+  "main": "party/index.ts",
+  "domain": "partykit.yourdomain.com"
+}
+```
+
+Replace `partykit.yourdomain.com` with a subdomain of a domain you manage on Cloudflare.
+
+### Deploy
+
+Run the deploy command with your Cloudflare credentials:
+
+```bash
+CLOUDFLARE_ACCOUNT_ID=your-account-id CLOUDFLARE_API_TOKEN=your-api-token npx partykit deploy
+```
+
+You can also set `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` as environment variables in your shell so you don't need to pass them every time.
+
+After deploying, update your `.env` file to point to your own domain:
+
+```env
+VITE_PARTYKIT_HOST=partykit.yourdomain.com
+```
+
+Then rebuild and redeploy the website:
+
+```bash
+npm run build
+npx wrangler deploy
+```
+
+> **Pricing:** The PartyKit platform fee is free for cloud-prem deployments. You only pay for your own Cloudflare usage.
+
+---
+
 ## Quick Reference: All Commands
 
 | What | Command |
@@ -300,6 +356,7 @@ npx partykit login
 | Build the app | `npm run build` |
 | Deploy website | `npx wrangler deploy` |
 | Deploy multiplayer | `npm run party:deploy` |
+| Deploy multiplayer (cloud-prem) | `CLOUDFLARE_ACCOUNT_ID=... CLOUDFLARE_API_TOKEN=... npx partykit deploy` |
 | Deploy AI DM | `supabase functions deploy dm-chat` |
 | Set AI secret | `supabase secrets set OPENAI_API_KEY=your-key` |
 | Log in to Cloudflare | `npx wrangler login` |
